@@ -1,17 +1,309 @@
 """
-Result collection and storage utilities for multi-field extraction experiments.
+Enhanced Results Collection and Management System
 
-This module provides:
-- Structured result storage
-- Metrics aggregation
-- Experiment metadata management
-- Checkpoint management
+Provides comprehensive tracking, storage, and analysis of extraction experiment results.
 """
 
 import os
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Any, Optional, Union
+
+import numpy as np
+import pandas as pd
+
+# Import schema and metrics components
+from src.results.schema import (
+    ExperimentResult, 
+    PromptPerformance, 
+    IndividualExtractionResult,
+    ExtractionStatus
+)
+from src.analysis.metrics import create_metrics_calculator
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+
+class EnhancedResultsCollector:
+    """
+    Advanced results collection system with comprehensive tracking 
+    and analysis capabilities.
+    """
+    
+    def __init__(
+        self, 
+        base_path: Union[str, Path], 
+        experiment_name: Optional[str] = None
+    ):
+        """
+        Initialize the results collector.
+        
+        Args:
+            base_path: Base directory for storing results
+            experiment_name: Name of the current experiment
+        """
+        self.base_path = Path(base_path)
+        self.experiment_name = experiment_name or f"experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Create experiment directory structure
+        self.experiment_dir = self.base_path / self.experiment_name
+        self._create_directory_structure()
+        
+        # Initialize experiment result tracker
+        self.experiment_result = ExperimentResult(experiment_name=self.experiment_name)
+        
+        # Initialize metadata
+        self.metadata = {
+            "experiment_name": self.experiment_name,
+            "started_at": datetime.now().isoformat(),
+            "fields": [],
+            "models": [],
+            "prompts": []
+        }
+    
+    def _create_directory_structure(self):
+        """
+        Create directories for storing experiment results.
+        """
+        # Create main experiment directory
+        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create subdirectories
+        subdirs = [
+            "raw_results",
+            "processed_results", 
+            "metrics", 
+            "visualizations", 
+            "checkpoints"
+        ]
+        
+        for subdir in subdirs:
+            (self.experiment_dir / subdir).mkdir(exist_ok=True)
+    
+    def add_field_results(
+        self, 
+        field: str, 
+        prompt_name: str, 
+        results: List[IndividualExtractionResult]
+    ):
+        """
+        Add results for a specific field and prompt.
+        
+        Args:
+            field: Field type being extracted
+            prompt_name: Name of the prompt used
+            results: List of individual extraction results
+        """
+        # Create or get performance tracker for this field and prompt
+        performance = PromptPerformance(
+            prompt_name=prompt_name,
+            field=field,
+            results=results
+        )
+        
+        # Calculate metrics
+        performance.calculate_metrics()
+        
+        # Add to experiment result
+        self.experiment_result.add_field_results(field, performance)
+        
+        # Update metadata
+        if field not in self.metadata["fields"]:
+            self.metadata["fields"].append(field)
+        if prompt_name not in self.metadata["prompts"]:
+            self.metadata["prompts"].append(prompt_name)
+    
+    def save_raw_results(
+        self, 
+        field: str, 
+        prompt_name: str, 
+        results: List[Dict[str, Any]]
+    ):
+        """
+        Save raw extraction results to a JSON file.
+        
+        Args:
+            field: Field type being extracted
+            prompt_name: Name of the prompt used
+            results: Raw results dictionary
+        """
+        filename = f"{field}_{prompt_name}_raw_results.json"
+        filepath = self.experiment_dir / "raw_results" / filename
+        
+        with open(filepath, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        logger.info(f"Saved raw results to {filepath}")
+    
+    def calculate_cross_field_metrics(self):
+        """
+        Calculate metrics across different fields.
+        
+        Returns:
+            Dictionary of cross-field metrics
+        """
+        cross_field_metrics = {
+            "total_fields": len(self.experiment_result.field_results),
+            "total_items": self.experiment_result.total_items,
+            "overall_accuracy": self.experiment_result.overall_accuracy,
+            "field_performance": {}
+        }
+        
+        for field, performances in self.experiment_result.field_results.items():
+            field_metrics = {
+                "best_prompt": max(performances, key=lambda p: p.accuracy).prompt_name,
+                "avg_accuracy": np.mean([p.accuracy for p in performances]),
+                "avg_character_error_rate": np.mean([p.avg_character_error_rate for p in performances])
+            }
+            cross_field_metrics["field_performance"][field] = field_metrics
+        
+        return cross_field_metrics
+    
+    def save_metrics(self, metrics: Dict[str, Any]):
+        """
+        Save calculated metrics to a JSON file.
+        
+        Args:
+            metrics: Dictionary of metrics to save
+        """
+        metrics_filename = "experiment_metrics.json"
+        filepath = self.experiment_dir / "metrics" / metrics_filename
+        
+        with open(filepath, 'w') as f:
+            json.dump(metrics, f, indent=2)
+        
+        logger.info(f"Saved experiment metrics to {filepath}")
+    
+    def save_experiment_result(self):
+        """
+        Save the complete experiment result to a JSON file.
+        """
+        # Finalize experiment metadata
+        self.metadata["completed_at"] = datetime.now().isoformat()
+        self.metadata["total_items"] = self.experiment_result.total_items
+        self.metadata["overall_accuracy"] = self.experiment_result.overall_accuracy
+        
+        # Save experiment metadata
+        metadata_filepath = self.experiment_dir / "experiment_metadata.json"
+        with open(metadata_filepath, 'w') as f:
+            json.dump(self.metadata, f, indent=2)
+        
+        # Save experiment result
+        result_filepath = self.experiment_dir / "experiment_result.json"
+        self.experiment_result.save_to_file(result_filepath)
+        
+        logger.info(f"Saved experiment result to {result_filepath}")
+        logger.info(f"Saved experiment metadata to {metadata_filepath}")
+    
+    def generate_dataframe(self, field: Optional[str] = None) -> pd.DataFrame:
+        """
+        Generate a pandas DataFrame from extraction results.
+        
+        Args:
+            field: Optional field to filter results
+        
+        Returns:
+            DataFrame with extraction results
+        """
+        all_results = []
+        
+        for f, performances in self.experiment_result.field_results.items():
+            # Skip if field specified and doesn't match
+            if field and f != field:
+                continue
+            
+            for perf in performances:
+                for result in perf.results:
+                    result_dict = result.to_dict()
+                    result_dict.update({
+                        "field": f,
+                        "prompt_name": perf.prompt_name
+                    })
+                    all_results.append(result_dict)
+        
+        return pd.DataFrame(all_results)
+    
+    def export_results(self, format: str = 'csv'):
+        """
+        Export results to different formats.
+        
+        Args:
+            format: Output format (csv, excel, parquet)
+        
+        Returns:
+            Path to exported file
+        """
+        # Generate DataFrame
+        df = self.generate_dataframe()
+        
+        # Determine export path
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_filename = f"{self.experiment_name}_results.{format}"
+        export_path = self.experiment_dir / "processed_results" / export_filename
+        
+        # Export based on format
+        if format == 'csv':
+            df.to_csv(export_path, index=False)
+        elif format == 'excel':
+            df.to_excel(export_path, index=False)
+        elif format == 'parquet':
+            df.to_parquet(export_path, index=False)
+        else:
+            raise ValueError(f"Unsupported export format: {format}")
+        
+        logger.info(f"Exported results to {export_path}")
+        return export_path
+
+    def generate_comparative_report(self):
+        """
+        Generate a comprehensive comparative report.
+        
+        Returns:
+            Dictionary with comparative analysis
+        """
+        report = {
+            "experiment_name": self.experiment_name,
+            "timestamp": datetime.now().isoformat(),
+            "cross_field_metrics": self.calculate_cross_field_metrics(),
+            "field_details": {}
+        }
+        
+        # Detailed analysis for each field
+        for field, performances in self.experiment_result.field_results.items():
+            # Create metrics calculator for the field
+            metrics_calculator = create_metrics_calculator(field, {})
+            
+            field_report = {
+                "prompts": [],
+                "best_prompt": None,
+                "worst_prompt": None
+            }
+            
+            # Analyze each prompt's performance
+            prompt_metrics = []
+            for perf in performances:
+                prompt_metric = {
+                    "prompt_name": perf.prompt_name,
+                    "accuracy": perf.accuracy,
+                    "character_error_rate": perf.avg_character_error_rate,
+                    "processing_time": perf.avg_processing_time,
+                    "total_items": perf.total_items
+                }
+                prompt_metrics.append(prompt_metric)
+            
+            # Sort prompts by performance
+            prompt_metrics.sort(key=lambda x: x["accuracy"], reverse=True)
+            
+            field_report["prompts"] = prompt_metrics
+            field_report["best_prompt"] = prompt_metrics[0] if prompt_metrics else None
+            field_report["worst_prompt"] = prompt_metrics[-1] if prompt_metrics else None
+            
+            report["field_details"][field] = field_report
+        
+        return report
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
