@@ -1,0 +1,93 @@
+# Detailed Prompts Configuration
+# 
+# This file contains more detailed and specific prompts for invoice field extraction.
+# These prompts provide additional context, field labels, and explicit instructions.
+
+# Metadata about this configuration
+config_info:
+  name: detailed_prompts
+  description: Detailed prompts with additional context and field information
+  version: 1.0
+  last_updated: "2025-03-12"
+
+# The actual prompt definitions
+prompts:
+  # Work Order Number extraction prompts
+  - name: detailed_work_order
+    text: "This is an invoice image. Please find and extract the work order number. It may be labeled as 'Work Order Number', 'Numero de Orden', 'Order #', or similar."
+    category: detailed
+    field_to_extract: work_order
+    description: "Detailed prompt providing multiple possible field labels."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "field_label_variations"
+      rationale: "Providing multiple possible labels helps the model identify the correct field"
+
+  - name: detailed_work_order_context
+    text: "This invoice is for maintenance services. Extract the work order number that identifies this job. The work order number is an important reference for tracking this service request."
+    category: detailed
+    field_to_extract: work_order
+    description: "Provides business context about the document and field purpose."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "context_enhanced"
+      rationale: "Additional context may help model understand document semantics"
+
+  - name: detailed_work_order_format
+    text: "Find the work order number on this invoice. The work order number is typically a sequence of 5-6 digits that uniquely identifies this job request."
+    category: detailed
+    field_to_extract: work_order
+    description: "Includes information about expected format of the field."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "format_description"
+      rationale: "Format hints may help model identify the correct field among similar numeric fields"
+
+  # Cost/Total extraction prompts
+  - name: detailed_cost
+    text: "Find the total amount due on this invoice. This is typically the final amount after taxes and may be labeled as 'Total', 'Amount Due', 'Grand Total', 'Balance Due', or similar."
+    category: detailed
+    field_to_extract: cost
+    description: "Detailed prompt specifying possible labels for the total cost."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "field_label_variations"
+      rationale: "Multiple label options help identify the correct field"
+
+  - name: detailed_cost_location
+    text: "Look for the total amount due on this invoice. This amount is typically located at the bottom of the invoice, often in a larger font or in a designated 'Total' section."
+    category: detailed
+    field_to_extract: cost
+    description: "Includes information about typical location of total cost."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "location_description"
+      rationale: "Location hints may improve extraction accuracy"
+
+  # Date extraction prompts
+  - name: detailed_date
+    text: "Find the date when this invoice was issued. It may be labeled as 'Invoice Date', 'Date', 'Issue Date', 'Date of Service', or similar. The date represents when this invoice was created."
+    category: detailed
+    field_to_extract: date
+    description: "Detailed prompt with possible field labels for invoice date."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "field_label_variations"
+      rationale: "Multiple label options for date fields"
+
+  - name: detailed_date_format
+    text: "Extract the invoice date from this document. The date may appear in formats like MM/DD/YYYY, DD-MM-YYYY, or Month Day, Year. Please return the complete date as it appears on the invoice."
+    category: detailed
+    field_to_extract: date
+    description: "Includes information about possible date formats."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "format_description"
+      rationale: "Handling various date formats improves extraction accuracy"

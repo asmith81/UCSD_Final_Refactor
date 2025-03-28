@@ -1,0 +1,98 @@
+# General Experiment Configuration
+# This file contains settings that apply to all experiments regardless of environment
+
+# Experiment Metadata
+experiment:
+  description: "Invoice processing with vision-language models"
+  version: "1.0.0"
+  default_field: "work_order"  # The default field to extract
+
+# Logging Configuration
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_to_file: true
+  log_dir: "${PROJECT_ROOT}/logs"
+  
+# Metrics and Evaluation
+metrics:
+  # List of metrics to calculate for each extraction
+  extract_metrics:
+    - "exact_match"       # Binary match/no-match
+    - "character_error_rate"  # Levenshtein distance normalized by GT length
+    
+  # Thresholds for considering an extraction successful
+  success_thresholds:
+    exact_match: true  # Must be an exact match
+    character_error_rate: 0.2  # Allow up to 20% character error rate as fallback
+    
+  # Preprocessing options for metrics calculation
+  preprocessing:
+    strip_whitespace: true  # Remove leading/trailing whitespace
+    lowercase: false  # Don't convert to lowercase for matching
+    extract_digits_only: false  # Use full text, not just digits
+
+# Visualization Settings
+visualization:
+  default_figsize: [10, 6]  # Default figure size for plots
+  color_scheme:
+    correct: "#2ecc71"  # Green for correct predictions
+    incorrect: "#e74c3c"  # Red for incorrect predictions
+    neutral: "#3498db"  # Blue for neutral elements
+  
+  # Default plot types
+  default_plots:
+    - "accuracy_bar"  # Bar chart of exact match accuracy
+    - "error_distribution"  # Distribution of character error rates
+    - "confusion_matrix"  # Confusion matrix for predictions
+
+# Model Default Settings
+# These settings apply to all models unless overridden in model-specific configs
+model_defaults:
+  max_new_tokens: 50  # Maximum tokens to generate
+  do_sample: false  # Don't use sampling (deterministic output)
+  
+# Prompt Default Settings
+prompt_defaults:
+  # Structured elements to include in prompts
+  include_format_instruction: true  # Include format instructions
+  include_examples: false  # Don't include examples by default
+  include_context: true  # Include context about the task
+  
+  # Default template elements
+  prefix: "<s>[INST]"  # Instruction prefix
+  suffix: "[/INST]"  # Instruction suffix
+  image_placeholder: "[IMG]"  # Placeholder for image in prompt
+
+# Dataset Settings
+dataset:
+  default_limit: 20  # Default number of images to process
+  shuffle: false  # Don't shuffle by default, preserve order
+  
+# Execution Settings
+execution:
+  save_intermediate: true  # Save intermediate results
+  fail_fast: false  # Continue on errors
+  timeout_per_image: 60  # Timeout in seconds per image
+  
+# Experiment Types
+experiment_types:
+  # Single model, multiple prompts
+  prompt_comparison:
+    description: "Compare different prompt templates with a single model"
+    default_model: "pixtral-12b"
+    metrics_focus: ["exact_match", "character_error_rate"]
+    visualization_focus: ["accuracy_bar", "prompt_comparison"]
+    
+  # Single prompt, multiple models
+  model_comparison:
+    description: "Compare different models with a consistent prompt"
+    default_prompt: "basic"
+    metrics_focus: ["exact_match", "character_error_rate", "processing_time"]
+    visualization_focus: ["accuracy_bar", "model_comparison", "performance_chart"]
+    
+  # Full grid search
+  full_grid:
+    description: "Test all combinations of models and prompts"
+    metrics_focus: ["exact_match", "character_error_rate", "processing_time"]
+    visualization_focus: ["heatmap", "model_prompt_interaction"]

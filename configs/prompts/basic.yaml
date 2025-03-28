@@ -1,0 +1,87 @@
+# Basic Prompts Configuration
+# 
+# This file contains basic, straightforward prompts for invoice field extraction.
+# These prompts use simple, direct language without elaborate instructions or context.
+
+# Metadata about this configuration
+config_info:
+  name: basic_prompts
+  description: Simple, direct prompts for invoice field extraction
+  version: 1.0
+  last_updated: "2025-03-12"
+
+# The actual prompt definitions
+prompts:
+  # Work Order Number extraction prompts
+  - name: basic_work_order
+    text: "Extract the work order number from this invoice image."
+    category: basic
+    field_to_extract: work_order
+    description: "Simple direct instruction that was effective in initial RunPod tests."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "initial_runpod_experiment"
+      performance_note: "High success rate in initial tests"
+
+  - name: basic_work_order_question
+    text: "What is the work order number in this invoice?"
+    category: basic
+    field_to_extract: work_order
+    description: "Question-format prompt for work order extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "question_variant"
+
+  - name: basic_work_order_id
+    text: "Find the work order ID in this invoice."
+    category: basic
+    field_to_extract: work_order
+    description: "Uses 'ID' terminology instead of 'number'."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "terminology_variant"
+
+  # Cost/Total extraction prompts
+  - name: basic_cost
+    text: "Extract the total cost from this invoice image."
+    category: basic
+    field_to_extract: cost
+    description: "Simple instruction for total cost extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "basic_prompt_set"
+
+  - name: basic_cost_question
+    text: "What is the total amount due on this invoice?"
+    category: basic
+    field_to_extract: cost
+    description: "Question-format prompt for cost extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "question_variant"
+
+  # Date extraction prompts
+  - name: basic_date
+    text: "Extract the invoice date from this document."
+    category: basic
+    field_to_extract: date
+    description: "Simple instruction for invoice date extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "basic_prompt_set"
+
+  - name: basic_date_question
+    text: "What is the date on this invoice?"
+    category: basic
+    field_to_extract: date
+    description: "Question-format prompt for date extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "question_variant"

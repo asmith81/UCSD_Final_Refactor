@@ -1,0 +1,42 @@
+# Local Development Environment Configuration
+
+# System Configuration
+environment:
+  name: "local"
+  type: "development"
+  
+# Hardware Settings
+hardware:
+  gpu_required: false
+  cpu_count: 4
+  memory_min: "8GB"
+  
+# Path Configuration
+paths:
+  base_dir: "${PROJECT_ROOT}"  # Will be determined programmatically
+  data_dir: "${PROJECT_ROOT}/data"
+  images_dir: "${PROJECT_ROOT}/data/images"
+  ground_truth_path: "${PROJECT_ROOT}/data/ground_truth.csv"
+  results_dir: "${PROJECT_ROOT}/results"
+  model_cache_dir: "${PROJECT_ROOT}/models/cache"
+  
+# Model Settings
+model_defaults:
+  precision: "float32"  # Full precision for local testing
+  device: "cpu"  # Default to CPU for local environment
+  batch_size: 1  # Smaller batch size for constrained resources
+  
+# Execution Settings
+execution:
+  parallel_processes: 1
+  checkpoint_frequency: 5  # Save results every 5 images
+  verbose_logging: true
+  
+# Dependencies
+dependencies:
+  transformers: ">=4.34.0"
+  torch: ">=2.0.0"
+  accelerate: ">=0.21.0"
+  pillow: ">=10.0.0"
+  pandas: ">=2.0.3"
+  matplotlib: ">=3.7.2"

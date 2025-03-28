@@ -1,0 +1,61 @@
+# RunPod GPU Environment Configuration
+
+# System Configuration
+environment:
+  name: "runpod"
+  type: "production"
+  
+# Hardware Settings
+hardware:
+  gpu_required: true
+  gpu_memory_min: "24GB"  # Adjusted to be more realistic for Pixtral-12B
+  cuda_version: "11.8"
+  
+# Path Configuration
+paths:
+  base_dir: "${PROJECT_ROOT}"
+  data_dir: "${PROJECT_ROOT}/data"
+  images_dir: "${PROJECT_ROOT}/data/images"
+  ground_truth_path: "${PROJECT_ROOT}/data/ground_truth.csv"
+  results_dir: "${PROJECT_ROOT}/results/raw"
+  model_cache_dir: "/cache"  # RunPod persistent storage
+  
+# Model Settings
+model_defaults:
+  precision: "bfloat16"  # Use bfloat16 as in your successful notebook
+  device: "cuda:0"
+  quantization: "16-bit"  # Optional quantization
+  batch_size: 1  # Adjust based on GPU memory
+  
+# Execution Settings
+execution:
+  parallel_processes: 1  # GPU work is already parallel
+  checkpoint_frequency: 1  # Save results after each image (for reliability)
+  verbose_logging: true
+  gpu_monitoring: true
+  
+# Dependencies - Matches exactly what worked in your successful notebook
+dependencies:
+  transformers: "==4.34.0"
+  torch: "==2.0.1"
+  accelerate: "==0.21.0"
+  sentencepiece: "==0.1.99"
+  tqdm: "==4.66.1"
+  pillow: "==10.0.0"
+  matplotlib: "==3.7.2"
+  pandas: "==2.0.3"
+  python-Levenshtein: "==0.21.1"
+  bitsandbytes: "==0.41.1"
+  numpy: "==1.24.3"
+
+# Model-specific configurations
+models:
+  pixtral-12b:
+    repo_id: "mistral-community/pixtral-12b"
+    model_type: "LlavaForConditionalGeneration"
+    processor_type: "AutoProcessor"
+    loading_strategy: "standard"
+    description: "Pixtral 12B vision-language model for invoice processing"
+    hardware:
+      gpu_memory_min: "24GB"
+    prompt_format: "<s>[INST]Extract the work order number from this invoice image.\n[IMG][/INST]"

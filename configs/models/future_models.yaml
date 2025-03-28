@@ -1,0 +1,5 @@
+description: Sample configuration
+name: future_models
+parameters:
+  param1: value1
+  param2: value2

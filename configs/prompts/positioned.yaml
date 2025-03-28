@@ -1,0 +1,126 @@
+# Positioned Prompts Configuration
+# 
+# This file contains prompts that incorporate positional information about where
+# specific fields are typically located on invoice documents.
+
+# Metadata about this configuration
+config_info:
+  name: positioned_prompts
+  description: Prompts with spatial positioning information for field extraction
+  version: 1.0
+  last_updated: "2025-03-12"
+
+# The actual prompt definitions
+prompts:
+  # Work Order Number extraction prompts with positional information
+  - name: positioned_work_order_upper
+    text: "Look at the upper part of this invoice image and extract the work order number."
+    category: positioned
+    field_to_extract: work_order
+    description: "Directs attention to the upper section of the invoice."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "positional_guidance"
+      rationale: "Work order numbers are often in the upper portion of invoices"
+
+  - name: positioned_work_order_header
+    text: "Extract the work order number from the header section of this invoice."
+    category: positioned
+    field_to_extract: work_order
+    description: "Focuses on the header section specifically."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "section_specific"
+      rationale: "Header sections typically contain key reference numbers"
+
+  - name: positioned_work_order_right
+    text: "Look at the upper right corner of this invoice and find the work order number."
+    category: positioned
+    field_to_extract: work_order
+    description: "Directs attention to the upper right corner."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "corner_specific"
+      rationale: "Many invoices place reference numbers in the upper right"
+
+  - name: positioned_work_order_left
+    text: "Examine the upper left quadrant of this invoice and extract the work order number."
+    category: positioned
+    field_to_extract: work_order
+    description: "Directs attention to the upper left quadrant."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "quadrant_specific"
+      rationale: "Some invoice formats place work orders in upper left"
+
+  # Cost/Total extraction prompts with positional information
+  - name: positioned_cost_bottom
+    text: "Look at the bottom section of this invoice and extract the total amount due."
+    category: positioned
+    field_to_extract: cost
+    description: "Directs attention to the typical location of total amounts."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "positional_guidance"
+      rationale: "Total amounts are typically at the bottom of invoices"
+
+  - name: positioned_cost_right_bottom
+    text: "Examine the bottom right corner of this invoice and extract the total cost."
+    category: positioned
+    field_to_extract: cost
+    description: "Focuses on the bottom right corner."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "corner_specific"
+      rationale: "Many invoice formats place totals in bottom right"
+
+  - name: positioned_cost_summary
+    text: "Find the total amount in the summary section at the bottom of this invoice."
+    category: positioned
+    field_to_extract: cost
+    description: "Refers to the summary section specifically."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "section_specific"
+      rationale: "Invoices often have distinct summary sections for totals"
+
+  # Date extraction prompts with positional information
+  - name: positioned_date_upper
+    text: "Look in the upper portion of this invoice and extract the invoice date."
+    category: positioned
+    field_to_extract: date
+    description: "Directs attention to the upper portion for date extraction."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "positional_guidance"
+      rationale: "Invoice dates are typically in the upper portion"
+
+  - name: positioned_date_right_upper
+    text: "Examine the upper right section of this invoice and find the date when it was issued."
+    category: positioned
+    field_to_extract: date
+    description: "Focuses on the upper right section."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "section_specific"
+      rationale: "Many invoices place dates in upper right section"
+
+  - name: positioned_date_near_header
+    text: "Look near the header or letterhead of this invoice and extract the invoice date."
+    category: positioned
+    field_to_extract: date
+    description: "Directs attention to the area near the letterhead."
+    version: "1.0"
+    format_instructions: {}
+    metadata:
+      source: "proximity_guidance"
+      rationale: "Dates are often placed near company letterhead"

@@ -1,0 +1,116 @@
+# Default Pipeline Configuration
+# This configuration defines the standard settings for the invoice extraction pipeline
+
+# General experiment settings
+experiment:
+  description: "Default pipeline configuration for invoice field extraction"
+  version: "1.0"
+  # Default model to use if not specified
+  model_name: "pixtral-12b"
+  # Default field to extract if not specified
+  field_to_extract: "work_order"
+  # Default prompt strategy
+  prompt_category: "specific"
+  prompt_name: "basic_work_order"
+
+# Batch processing settings
+batch_processing:
+  # Automatically estimate optimal batch size if none specified
+  auto_batch_size: true
+  # Maximum batch size to consider when auto-estimating
+  max_batch_size: 8
+  # Default batch size if auto-estimation fails or is disabled
+  default_batch_size: 1
+  # Memory threshold for batch size estimation (fraction of total GPU memory)
+  memory_threshold: 0.8
+  # Whether to optimize memory between batches
+  optimize_between_batches: true
+
+# Checkpointing configuration
+checkpointing:
+  # Enable checkpointing by default
+  enable: true
+  # How many batches to process between checkpoints
+  frequency: 5
+  # Resume from checkpoint if available
+  resume: true
+  # Default checkpoint filename
+  filename: "checkpoint.json"
+
+# Error handling configuration
+error_handling:
+  # Whether to continue when individual images fail
+  continue_on_error: true
+  # Maximum failures before aborting the entire process
+  max_failures: 50
+  # Whether to retry failed images
+  retry_failures: false
+  # Maximum retry attempts if retry_failures is true
+  max_retries: 1
+
+# Resource management settings
+resources:
+  # Clean up GPU memory after processing is complete
+  cleanup_on_complete: true
+  # Monitor GPU memory during processing
+  monitor_memory: true
+  # Alert threshold for GPU memory usage (percentage)
+  memory_alert_threshold: 95
+  # Whether to optimize precision automatically
+  auto_optimize_precision: true
+
+# Output and result settings
+output:
+  # Whether to display progress bars during processing
+  show_progress: true
+  # Default metrics to calculate
+  metrics:
+    - "exact_match"
+    - "character_error_rate"
+  # Save detailed results for each image
+  save_detailed_results: true
+  # Create visualizations of results
+  create_visualizations: true
+  # Save model outputs alongside processed outputs
+  save_raw_extractions: true
+
+# Field extraction rules
+extraction_rules:
+  # Rules for extracting work order numbers
+  work_order:
+    # Regular expression pattern to extract the field
+    pattern: "(\\d+)"
+    # Whether to use the last match (vs. first)
+    use_last_match: true
+  # Rules for extracting cost/amount fields
+  cost:
+    pattern: "\\$?\\s*([\\d,]+\\.?\\d*)"
+    use_last_match: true
+  # Rules for extracting date fields
+  date:
+    pattern: "(\\d{1,2}[/\\-]\\d{1,2}[/\\-]\\d{2,4})"
+    use_last_match: false
+
+# Prompt comparison settings
+prompt_comparison:
+  # Number of images to use for prompt comparison
+  num_images: 10
+  # Whether to use a consistent subset of images
+  consistent_subset: true
+  # Which metrics to prioritize in comparison
+  primary_metric: "exact_match"
+  # Whether to include detailed per-image results
+  include_details: false
+
+# Model comparison settings
+model_comparison:
+  # Number of images to use for model comparison
+  num_images: 10
+  # Whether to use a consistent subset of images
+  consistent_subset: true
+  # Which metrics to prioritize in comparison
+  primary_metric: "exact_match"
+  # Which models to include in comparison (empty = all available)
+  models: []
+  # Whether to include detailed per-image results
+  include_details: false

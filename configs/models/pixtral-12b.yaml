@@ -1,0 +1,102 @@
+# Pixtral-12B Model Configuration
+# Basic model information
+name: "pixtral-12b"
+repo_id: "mistral-community/pixtral-12b"
+description: "Pixtral 12B vision-language model for invoice processing"
+model_type: "LlavaForConditionalGeneration"
+processor_type: "AutoProcessor"
+
+# Explicitly defined supported parameters for model loading
+supported_parameters:
+  - device_map
+  - torch_dtype
+  - max_memory
+  - low_cpu_mem_usage
+  - trust_remote_code
+  - quantization_config
+  - attn_implementation
+  - use_flash_attention_2
+  - use_cache
+  - cache_dir
+
+# Hardware requirements
+hardware:
+  gpu_required: true
+  gpu_memory_min: "24GB"
+  recommended_gpu: "A4000 or better"
+  minimum_compute_capability: "7.5"  # Turing architecture or newer
+
+# Loading configuration
+loading:
+  default_strategy: "optimized"
+  default_params:
+    torch_dtype: "bfloat16"
+    device_map: "cuda:0"
+    use_auth_token: false
+    use_flash_attention_2: false
+    attn_implementation: "eager"
+
+# Quantization options with more detailed configuration
+quantization:
+  # Default quantization strategy
+  default: "bfloat16"
+  
+  # Detailed quantization configurations
+  options:
+    bfloat16:
+      torch_dtype: "bfloat16"
+      device_map: "cuda:0"
+      use_flash_attention_2: false
+      attn_implementation: "eager"
+    
+    int8:
+      load_in_8bit: true
+      device_map: "auto"
+      use_flash_attention_2: false
+      attn_implementation: "eager"
+      bnb_8bit_quant_type: "fp8"
+    
+    int4:
+      load_in_4bit: true
+      bnb_4bit_compute_dtype: "bfloat16"
+      bnb_4bit_quant_type: "nf4"
+      device_map: "auto"
+      use_flash_attention_2: false
+      attn_implementation: "eager"
+
+# Inference parameters with more comprehensive settings
+inference:
+  # Basic generation parameters
+  max_new_tokens: 50
+  do_sample: false
+  temperature: 1.0
+  top_k: 50
+  top_p: 0.95
+  
+  # Batch processing
+  batch_size: 1
+  max_batch_memory_gb: 20  # Maximum GPU memory for batch processing
+
+# Prompt configuration with more details
+prompt:
+  format: "<s>[INST]Extract the work order number from this invoice image.\n[IMG][/INST]"
+  default_field: "work_order"
+  input_format: 
+    - image: "RGB"
+    - max_resolution: "4032x3024"
+    - max_file_size_mb: 10
+
+# Performance monitoring
+performance:
+  expected_accuracy: 0.7  # 70% accuracy expectation
+  inference_timeout_seconds: 30
+  gpu_utilization_threshold: 0.8  # 80% GPU utilization warning
+
+# Error handling
+error_handling:
+  retry_attempts: 2
+  fallback_strategy: "minimal_params"
+  critical_error_fields:
+    - device_map
+    - torch_dtype
+    - trust_remote_code
