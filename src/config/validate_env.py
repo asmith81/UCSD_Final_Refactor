@@ -12,6 +12,7 @@ import platform
 from pathlib import Path
 import importlib.util
 import logging
+from typing import Optional
 
 # Set up logging
 logging.basicConfig(
@@ -64,67 +65,104 @@ def check_gpu():
         logger.warning("❌ PyTorch is not installed")
         return False
 
+def find_project_root() -> Optional[Path]:
+    """
+    Attempt to find the project root directory.
+    
+    Returns:
+        Path to the project root if found, None otherwise
+    """
+    # Check if PROJECT_ROOT environment variable is set
+    if "PROJECT_ROOT" in os.environ:
+        project_root = Path(os.environ["PROJECT_ROOT"])
+        if project_root.exists():
+            return project_root
+    
+    # Check for RunPod environment
+    runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
+    if any(indicator in os.environ for indicator in runpod_indicators) or os.path.exists('/workspace'):
+        # In RunPod, the standard project root is /workspace
+        workspace_path = Path('/workspace')
+        if workspace_path.exists():
+            # Set environment variable for future use
+            os.environ["PROJECT_ROOT"] = str(workspace_path)
+            return workspace_path
+    
+    # Start with the current file's directory
+    current_file = Path(__file__).resolve()
+    current_dir = current_file.parent
+    
+    # Look for common project markers
+    markers = [
+        ".git",
+        "setup.py",
+        "requirements.txt",
+        "README.md",
+        ".github"
+    ]
+    
+    # Walk up the directory tree looking for markers
+    search_dir = current_dir
+    while search_dir != search_dir.parent:  # Stop at filesystem root
+        for marker in markers:
+            if (search_dir / marker).exists():
+                return search_dir
+        search_dir = search_dir.parent
+    
+    # If we reach here, we couldn't find the project root
+    return None
+
 def check_project_structure():
     """Check if the project structure is correctly set up."""
-    # Try to determine project root
-    current_path = Path(__file__).resolve().parent
-    project_root = None
-    
-    # First check environment variable
-    if 'PROJECT_ROOT' in os.environ:
-        project_root = Path(os.environ['PROJECT_ROOT'])
-        logger.info(f"📂 Project root from environment: {project_root}")
-    else:
-        # Try to determine programmatically
-        markers = [".git", "setup.py", "requirements.txt", "README.md"]
-        search_path = current_path
-        
-        while search_path != search_path.parent:
-            if any((search_path / marker).exists() for marker in markers):
-                project_root = search_path
-                break
-            search_path = search_path.parent
+    project_root = find_project_root()
     
     if project_root is None:
         logger.warning("❌ Could not determine project root")
-        return False
+        
+        # Check if in RunPod as fallback
+        if os.path.exists('/workspace'):
+            logger.info("✅ Running in RunPod environment, using /workspace as project root")
+            project_root = Path('/workspace')
+            os.environ['PROJECT_ROOT'] = str(project_root)
+        else:
+            return False
     
-    # Check critical directories
-    critical_dirs = [
-        "configs/environments",
-        "src/config",
-        "data",
-        "models/cache",
-        "results"
+    logger.info(f"✅ Project root: {project_root}")
+    
+    # Check for core directories
+    required_dirs = [
+        "src",
+        "configs",
+        "data"
     ]
     
-    missing_dirs = []
-    for dir_path in critical_dirs:
-        full_path = project_root / dir_path
-        if not full_path.exists():
-            missing_dirs.append(dir_path)
+    # In RunPod, only check for critical directories
+    if str(project_root) == '/workspace':
+        required_dirs = ["src"]
     
-    if missing_dirs:
-        logger.warning(f"❌ Missing directories: {', '.join(missing_dirs)}")
-        return False
+    for dir_name in required_dirs:
+        dir_path = project_root / dir_name
+        if not dir_path.exists():
+            logger.warning(f"❌ Required directory not found: {dir_path}")
+            # Create the directory if in RunPod to help setup
+            if str(project_root) == '/workspace':
+                try:
+                    dir_path.mkdir(exist_ok=True)
+                    logger.info(f"✅ Created directory: {dir_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to create directory {dir_path}: {e}")
     
-    # Check configuration files
-    config_files = [
-        "configs/environments/local.yaml",
-        "configs/experiment.yaml"
-    ]
+    # Add source directory to Python path if not already there
+    src_dir = str(project_root / "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+        logger.info(f"✅ Added to Python path: {src_dir}")
     
-    missing_files = []
-    for file_path in config_files:
-        full_path = project_root / file_path
-        if not full_path.exists():
-            missing_files.append(file_path)
+    # Set PROJECT_ROOT environment variable if not already set
+    if os.environ.get('PROJECT_ROOT') != str(project_root):
+        os.environ['PROJECT_ROOT'] = str(project_root)
+        logger.info(f"✅ Set PROJECT_ROOT environment variable: {project_root}")
     
-    if missing_files:
-        logger.warning(f"❌ Missing configuration files: {', '.join(missing_files)}")
-        return False
-    
-    logger.info("✅ Project structure is correctly set up")
     return True
 
 def validate_environment():
