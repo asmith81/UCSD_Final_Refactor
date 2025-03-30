@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from src.config.experiment import ExperimentConfiguration
-from src.config.paths import get_path_config
+from src.config.path_config import get_path_config
 
 
 @dataclass

@@ -109,6 +109,136 @@ class PromptPerformance:
         }
 
 @dataclass
+class FieldResult:
+    """
+    Aggregate results for a specific field across multiple prompts.
+    
+    This class encapsulates all extraction results for a single field,
+    organized by prompt, and provides aggregate metrics across all prompts.
+    """
+    field_name: str
+    average_accuracy: float = 0.0
+    sample_count: int = 0
+    # Map of prompt name to its performance metrics
+    prompt_performances: Dict[str, PromptPerformance] = field(default_factory=dict)
+    
+    # Additional field-specific metrics
+    exact_match: Optional[float] = None
+    character_error_rate: Optional[float] = None
+    processing_time: Optional[float] = None
+    
+    def add_prompt_performance(self, prompt_performance: PromptPerformance) -> None:
+        """
+        Add a prompt's performance results to this field.
+        
+        Args:
+            prompt_performance: Performance metrics for a specific prompt
+        """
+        self.prompt_performances[prompt_performance.prompt_name] = prompt_performance
+        self._recalculate_metrics()
+    
+    def _recalculate_metrics(self) -> None:
+        """
+        Recalculate aggregate field metrics based on all prompt performances.
+        """
+        if not self.prompt_performances:
+            self.average_accuracy = 0.0
+            self.sample_count = 0
+            return
+            
+        # Calculate weighted average across all prompts
+        total_accuracy_weighted = 0.0
+        total_samples = 0
+        
+        # Track other metrics
+        all_exact_match = []
+        all_cer = []
+        all_times = []
+        
+        for prompt_perf in self.prompt_performances.values():
+            samples = prompt_perf.total_items
+            if samples > 0:
+                total_accuracy_weighted += prompt_perf.accuracy * samples
+                total_samples += samples
+                
+                if hasattr(prompt_perf, 'exact_match') and prompt_perf.exact_match is not None:
+                    all_exact_match.append(prompt_perf.exact_match)
+                    
+                if hasattr(prompt_perf, 'character_error_rate') and prompt_perf.character_error_rate is not None:
+                    all_cer.append(prompt_perf.character_error_rate)
+                    
+                if hasattr(prompt_perf, 'processing_time') and prompt_perf.processing_time is not None:
+                    all_times.append(prompt_perf.processing_time)
+        
+        # Set aggregate metrics
+        self.average_accuracy = total_accuracy_weighted / total_samples if total_samples > 0 else 0.0
+        self.sample_count = total_samples
+        
+        # Set additional metrics if available
+        if all_exact_match:
+            self.exact_match = sum(all_exact_match) / len(all_exact_match)
+            
+        if all_cer:
+            self.character_error_rate = sum(all_cer) / len(all_cer)
+            
+        if all_times:
+            self.processing_time = sum(all_times) / len(all_times)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert field result to a dictionary."""
+        return {
+            "field_name": self.field_name,
+            "average_accuracy": self.average_accuracy,
+            "sample_count": self.sample_count,
+            "exact_match": self.exact_match,
+            "character_error_rate": self.character_error_rate,
+            "processing_time": self.processing_time,
+            "prompt_performances": {
+                name: perf.to_dict() for name, perf in self.prompt_performances.items()
+            }
+        }
+        
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'FieldResult':
+        """
+        Create a FieldResult instance from a dictionary.
+        
+        Args:
+            data: Dictionary containing field result data
+            
+        Returns:
+            FieldResult instance populated from the dictionary
+        """
+        field_result = FieldResult(
+            field_name=data.get('field_name', ''),
+            average_accuracy=data.get('average_accuracy', 0.0),
+            sample_count=data.get('sample_count', 0),
+            exact_match=data.get('exact_match'),
+            character_error_rate=data.get('character_error_rate'),
+            processing_time=data.get('processing_time')
+        )
+        
+        # Populate prompt performances
+        prompt_performances = data.get('prompt_performances', {})
+        for prompt_name, prompt_data in prompt_performances.items():
+            prompt_perf = PromptPerformance(
+                prompt_name=prompt_name,
+                field=field_result.field_name
+            )
+            
+            # Copy metrics
+            for metric in ['accuracy', 'exact_match', 'character_error_rate', 'processing_time']:
+                if metric in prompt_data:
+                    setattr(prompt_perf, metric, prompt_data[metric])
+            
+            prompt_perf.total_items = prompt_data.get('total_items', 0)
+            prompt_perf.successful_extractions = prompt_data.get('successful_extractions', 0)
+            
+            field_result.prompt_performances[prompt_name] = prompt_perf
+            
+        return field_result
+
+@dataclass
 class ExperimentResult:
     """
     Comprehensive schema for storing entire experiment results.

@@ -23,7 +23,7 @@ from typing import Dict, List, Any, Optional, Tuple, Type, Union, Callable
 
 # Import configuration components
 from src.config.environment import get_environment_config
-from src.config.paths import get_path_config
+from src.config.path_config import get_path_config
 
 # Set up logging
 logger = logging.getLogger(__name__)
