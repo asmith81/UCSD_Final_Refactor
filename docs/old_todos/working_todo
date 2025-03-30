@@ -1,0 +1,252 @@
+Priority Files for Updates/Creation
+
+src/analysis/quantization.py - Add quantization impact analysis
+src/execution/pipeline/recovery.py - Enhance error recovery mechanisms
+
+
+New Files Needed:
+
+src/docs/architecture.md - Document overall architecture
+src/docs/interfaces.md - Document component interfaces
+src/docs/setup_guide.md - Create environment setup guide
+src/analysis/quantization_visualization.py - Specialized visualizations for quantization
+
+Comparison of files for separation
+stages.py vs visualization.py vs comparison.py
+collector.py vs comparison.py for visualiztions and stats
+
+
+Next Steps
+
+Enhance Results Management
+
+Add quantization impact analysis
+Improve visualization customization
+
+
+Improve Documentation
+
+Focus on architecture documentation
+Add component interface documentation
+Create setup and usage guides
+
+
+Quantization Enhancements
+
+Complete speed/accuracy tradeoff analysis
+Add specialized visualization for quantization impact
+Implement adaptive quantization based on hardware
+
+Diferred Pipline Steps
+
+Create end-to-end test cases for the pipeline
+Enhance checkpoint and resumption capabilities
+
+Testing Framework
+
+Set up unit test framework for core components
+Implement integration tests for pipeline
+Create test fixtures and mock data
+
+Testing Details
+# Software Testing Guide for the Pipeline Implementation
+
+I understand you're new to software testing. I'll explain how to set up and implement tests for our pipeline system in practical terms.
+
+## Test File Structure
+
+Here's the file structure you would need to create:
+
+```
+src/
+  tests/
+    __init__.py                     # Makes the directory a Python package
+    conftest.py                     # Test configuration and fixtures
+    test_pipeline_factory.py        # Unit tests for the factory
+    test_pipeline_service.py        # Unit tests for the pipeline service
+    test_end_to_end/
+      __init__.py
+      test_basic_extraction.py      # Basic extraction test
+      test_quantization.py          # Quantization comparison test
+      test_prompt_comparison.py     # Prompt comparison test
+      test_model_comparison.py      # Model comparison test
+      test_hybrid_experiment.py     # Hybrid experiment test
+    test_data/                      # Test data directory
+      images/                       # Small set of test images
+      ground_truth.csv              # Ground truth data for test images
+      mock_responses/               # Mock model responses
+```
+
+## Test Environment Setup
+
+1. **Python Testing Framework**:
+   - We'll use `pytest`, which is the standard testing framework for Python
+   - It's easy to install: `pip install pytest pytest-cov`
+
+2. **Test Dependencies**:
+   - Mock libraries: `pip install pytest-mock`
+   - For testing with images: `pip install Pillow`
+   - For measuring performance: `pip install pytest-benchmark`
+
+3. **Testing Environment**:
+   - You'll need a virtual environment with all project dependencies installed
+   - Tests should run in an environment similar to your development environment
+
+## How to Implement Tests
+
+Let's look at an example of how you would implement a basic test:
+
+```python
+# src/tests/test_end_to_end/test_basic_extraction.py
+
+import os
+import pytest
+from src.config.experiment import ExperimentConfiguration
+from src.execution.pipeline.factory import create_extraction_pipeline
+
+# This is a test fixture - it sets up the test environment
+@pytest.fixture
+def test_config():
+    """Create a test configuration for extraction."""
+    return ExperimentConfiguration(
+        name="test_extraction",
+        model_name="test_model",
+        fields_to_extract=["work_order"],
+        dataset={
+            "source": "test",
+            "limit": 5  # Only process 5 test images
+        }
+    )
+
+# This is an actual test function
+def test_basic_extraction_pipeline(test_config, monkeypatch):
+    """Test that basic extraction pipeline works end-to-end."""
+    # Set up test environment
+    monkeypatch.setenv("TEST_MODE", "True")
+    monkeypatch.setattr("src.models.model_service.get_model", mock_get_model)
+    
+    # Create pipeline using factory
+    pipeline = create_extraction_pipeline(test_config)
+    
+    # Run the pipeline
+    result = pipeline.run()
+    
+    # Verify results are as expected
+    assert result.status == "success"
+    assert "field_extractions" in result.stage_results
+    
+    # Check extraction results
+    extractions = result.stage_results["field_extractions"]
+    assert "work_order" in extractions
+    
+    # Verify at least some extractions worked
+    work_order_results = extractions["work_order"]["prompt_results"]
+    for prompt_name, results in work_order_results.items():
+        success_count = sum(1 for r in results if r.get("exact_match", False))
+        assert success_count > 0, f"No successful extractions for prompt {prompt_name}"
+```
+
+## Mock Components
+
+For testing, you'll need mock components to avoid dependencies on real models:
+
+```python
+# src/tests/conftest.py
+
+import pytest
+import json
+import os
+from pathlib import Path
+
+# Mock model class that returns predetermined results
+class MockModel:
+    def __init__(self):
+        self.responses = {}
+        self._load_mock_responses()
+    
+    def _load_mock_responses(self):
+        # Load prepared mock responses from files
+        mock_dir = Path(__file__).parent / "test_data" / "mock_responses"
+        for response_file in mock_dir.glob("*.json"):
+            with open(response_file, 'r') as f:
+                self.responses[response_file.stem] = json.load(f)
+    
+    def generate(self, prompt, image=None):
+        # Look up pre-defined response based on image ID
+        image_id = os.path.basename(image).split('.')[0] if image else "default"
+        return self.responses.get(image_id, {"extraction": "mock_value"})
+
+# This makes the mock model available to all tests
+@pytest.fixture
+def mock_model():
+    return MockModel()
+
+# This function replaces the real model loading function
+def mock_get_model(model_name, **kwargs):
+    return MockModel()
+```
+
+## Running Tests
+
+To run the tests, you would:
+
+1. Open a terminal/command prompt
+2. Navigate to your project root directory
+3. Run the tests with one of these commands:
+   - `pytest` (runs all tests)
+   - `pytest src/tests/test_end_to_end/test_basic_extraction.py` (runs a specific test file)
+   - `pytest -xvs` (runs with more verbose output)
+
+Example:
+```bash
+cd /path/to/project
+python -m pytest src/tests/test_end_to_end/
+```
+
+## Test Data Requirements
+
+You'll need to prepare:
+
+1. A small set of test images (5-10)
+2. A ground truth CSV file with known values for those images
+3. Mock model responses (what the model would output for each test image)
+
+## Continuous Integration
+
+Once tests are set up, you could integrate them with CI/CD tools like GitHub Actions:
+
+```yaml
+# .github/workflows/test.yml
+name: Run Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      - name: Run tests
+        run: |
+          pytest --cov=src/
+```
+
+## Tips for Creating Tests
+
+1. **Start simple**: Begin with basic functionality tests
+2. **Use small datasets**: For faster test execution
+3. **Mock external dependencies**: Avoid relying on actual models or APIs
+4. **Test for both success and failure**: Ensure error handling works
+5. **Use descriptive test names**: Makes it clear what's being tested
+6. **Run tests often**: Catch issues early
+
+Remember, the goal is to verify that your code works as expected, both for individual components and for the system as a whole.

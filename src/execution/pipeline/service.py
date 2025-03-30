@@ -26,7 +26,8 @@ from .stages import (
     VisualizationStage
 )
 from .result import PipelineExecutionResult
-from .error_handling import ErrorHandler, ProgressTracker, RecoveryStrategy
+from .error_handling import ErrorHandler, ProgressTracker
+from .recovery import RecoveryStrategy, RecoveryResult, ErrorRecoveryManager
 
 # Import project configurations
 from src.config.experiment import ExperimentConfiguration
@@ -220,7 +221,7 @@ class ExtractionPipelineService:
         try:
             # Run before-stage hooks
             for hook in self.before_stage_hooks:
-                hook(stage_name, previous_results)
+                hook(stage, self)
             
             # Update progress tracker
             self.progress_tracker.start_stage(stage_name)
@@ -238,9 +239,15 @@ class ExtractionPipelineService:
             # Mark stage complete
             self.progress_tracker.complete_stage(stage_name)
             
+            # Create checkpoint if recovery is enabled
+            if self.enable_recovery:
+                checkpoint_path = self.error_handler.create_checkpoint(stage, stage_results)
+                if checkpoint_path:
+                    logger.info(f"Created checkpoint after stage {stage_name}: {checkpoint_path}")
+            
             # Run after-stage hooks
             for hook in self.after_stage_hooks:
-                hook(stage_name, stage_results)
+                hook(stage, self, stage_results)
             
             # Optimize memory if enabled
             if self.optimize_memory_between_stages:

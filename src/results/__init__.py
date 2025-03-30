@@ -1,18 +1,16 @@
-from .collector import EnhancedResultsCollector
-from .schema import ExperimentResult, PromptPerformance, IndividualExtractionResult, ExtractionStatus
-from .storage import ResultStorage  # Existing storage module
+"""
+Results module initialization
+"""
 
-# Optionally add convenience imports
-from src.analysis.metrics import AdvancedMetricsCalculator
-from src.analysis.visualization import EnhancedResultVisualizer
+# Core classes and functions for easy access
+from .collector import ResultsCollector, get_results_collector
+from .schema import ExperimentResult, PromptPerformance, IndividualExtractionResult, ExtractionStatus
 
 __all__ = [
-    'EnhancedResultsCollector',
+    'ResultsCollector',
+    'get_results_collector',
     'ExperimentResult',
     'PromptPerformance',
-    'IndividualExtractionResult',
-    'ExtractionStatus',
-    'ResultStorage',
-    'AdvancedMetricsCalculator',
-    'EnhancedResultVisualizer'
+    'IndividualExtractionResult', 
+    'ExtractionStatus'
 ]

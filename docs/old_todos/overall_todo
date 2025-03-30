@@ -1,0 +1,177 @@
+# Invoice Extraction Project - Refactoring ToDo (Updated)
+
+## Overview
+This document outlines the planned refactoring tasks for the invoice extraction system. The goal is to improve architecture, maintainability, and extensibility while preserving existing functionality.
+
+## Core Components Refactoring
+
+### 1. Configuration System
+- [x] Create a unified configuration class hierarchy
+- [x] Implement environment detection with clear precedence rules
+- [x] Add configuration validation with detailed error messages
+- [x] Create typed configuration objects for each component
+- [x] Add support for runtime configuration overrides
+- [x] Document configuration schema and validation rules
+- [x] Remove redundant configuration loading across modules
+- [x] Implement configuration registry pattern in remaining modules
+
+### 2. Model Management
+- [x] Refactor model registry to use service pattern
+- [x] Centralize model loading logic
+- [x] Improve GPU memory management
+- [x] Add robust error handling for model loading failures
+- [x] Implement model versioning support
+- [x] Create model service interface with dependency injection
+- [x] Add performance metrics collection during model loading/usage
+- [x] Implement comprehensive quantization experiment support
+- [x] Add comparative analysis of quantization strategies
+- [x] Create visualization tools for quantization impact
+
+### 3. Prompt System
+- [x] Enhance prompt registry with additional metadata
+- [x] Create field-specific prompt collections
+- [x] Add prompt versioning and experimentation support
+- [x] Implement formatting utilities for different models
+- [ ] Add A/B testing framework for prompts
+- [ ] Add unit tests for prompt formatting
+- [ ] Document prompt creation best practices
+- [ ] Create utility for bulk prompt operations
+
+### 4. Execution Pipeline
+- [x] Refactor into service-based architecture
+- [x] Implement pipeline stages with clear interfaces
+- [x] Improve batch processing with memory optimization
+- [x] Add comprehensive progress tracking
+- [x] Enhance error handling and recovery mechanisms
+- [x] Create pipeline factory for experiment configuration
+- [ ] Add support for distributed processing
+- [x] Integrate model service for unified model management
+
+### 5. Results Management
+- [x] Define standard schema for extraction results
+- [x] Create result collection service
+- [x] Implement field-specific metrics calculation
+- [ ] Enhance visualization generation
+- [x] Add result comparison utilities
+- [ ] Improve checkpoint and resumption capabilities
+- [x] Create exporters for different output formats
+- [x] Add quantization impact analysis to result storage
+
+## Cross-Cutting Concerns
+
+### Error Handling
+- [x] Create domain-specific exception hierarchy
+- [x] Implement consistent error handling patterns
+- [x] Add detailed error reporting
+- [x] Create error recovery mechanisms
+- [ ] Add error aggregation and analysis utilities
+
+### Logging & Monitoring
+- [x] Implement structured logging
+- [x] Create performance monitoring hooks
+- [x] Add resource usage tracking
+- [ ] Implement experiment audit trails
+- [ ] Create dashboard for experiment monitoring
+
+### Testing
+- [ ] Add unit tests for core components
+- [ ] Create integration tests for end-to-end workflows
+- [ ] Implement test fixtures and factory methods
+- [x] Add performance benchmarks
+- [ ] Create test data generation utilities
+
+## Deployment & Environment Management
+- [x] Enhance environment detection and configuration
+- [x] Improve RunPod integration
+- [ ] Add containerization support
+- [x] Create environment validation utilities
+- [ ] Document environment setup process
+- [ ] Implement resource scaling mechanisms
+
+## Documentation
+- [x] Document configuration schema
+- [ ] Create architecture documentation
+- [] Document component interfaces
+- [ ] Add code documentation for core classes
+- [ ] Create API reference for public interfaces
+- [ ] Add tutorials for common workflows
+- [ ] Create troubleshooting guide
+
+## Enhanced Experiment Support
+
+### Quantization Experiments
+- [x] Implement quantization comparison framework
+- [x] Add memory usage tracking for different quantization strategies
+- [x] Create speed/accuracy tradeoff analysis
+- [x] Add visualizations for quantization impact
+- [x] Support experiment configuration for quantization testing
+- [x] Implement adaptive quantization based on hardware capabilities
+
+### Notebook Integration
+- [ ] Create streamlined setup notebook
+- [ ] Implement configurable experiment notebook
+- [ ] Build visualization and analysis notebook
+- [ ] Add experiment comparison utilities
+- [ ] Create pre-configured experiment templates
+
+## Implementation Plan
+1. ✓ Start with the configuration system as foundation (COMPLETED)
+2. ✓ Refactor model loading and registry (COMPLETED)
+3. ✓ Update prompt system (COMPLETED)
+4. ✓ Enhance execution pipeline with model service integration (COMPLETED)
+5. → Implement result management with quantization support (PARTIALLY COMPLETE)
+6. → Develop experiment configurability and visualization (PARTIALLY COMPLETE)
+
+## Progress Tracking
+
+### Phase 1: Configuration System (Target: COMPLETED)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [x] Testing
+- [x] Documentation
+
+### Phase 2: Model Management (Target: COMPLETED)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [x] Testing
+- [] Documentation
+
+### Phase 3: Prompt System (Target: COMPLETED)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [x] Testing
+- [x] Documentation
+
+### Phase 4: Execution Pipeline (Target: COMPLETED)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [x] Testing
+- [x] Documentation
+
+### Phase 5: Results Management (Target: Partially Complete)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [ ] Testing
+- [ ] Documentation
+
+### Phase 6: Experiment Configurability (Target: Partially Complete)
+- [x] Requirements analysis
+- [x] Design review
+- [x] Implementation
+- [ ] Testing
+- [ ] Documentation
+
+## Current Progress Summary
+Approximately 80% of the planned refactoring has been completed. Major systems like configuration, model management (including quantization), prompt system, and execution pipeline are now fully implemented. Results management and experiment configurability are partially complete, with the core components in place but some additional features and testing still needed.
+
+## Next Steps Priority
+1. Complete remaining aspects of results management visualization
+2. Add comprehensive testing for all implemented components
+3. Improve documentation coverage
+4. Implement notebook integration for easier experiment configuration
+5. Add containerization support for deployment
