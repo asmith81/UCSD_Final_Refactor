@@ -14,7 +14,10 @@ The configuration system follows these principles:
 """
 
 import os
+import sys
+import json
 import yaml
+import shutil
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -50,16 +53,20 @@ class ConfigurationNotFoundError(ConfigurationError):
 
 
 class EnvironmentType(Enum):
-    """Enumeration of supported execution environments."""
+    """Type of execution environment."""
     LOCAL = auto()
     RUNPOD = auto()
+    CLOUD = auto()
+    CUSTOM = auto()
     
     @classmethod
     def from_string(cls, value: str) -> 'EnvironmentType':
         """Convert string representation to enum value."""
         value_map = {
             "local": cls.LOCAL,
-            "runpod": cls.RUNPOD
+            "runpod": cls.RUNPOD,
+            "cloud": cls.CLOUD,
+            "custom": cls.CUSTOM
         }
         if value.lower() not in value_map:
             raise ValueError(f"Unknown environment: {value}")
@@ -168,10 +175,273 @@ class ModelConfig:
         return errors
 
 
-class BaseConfig(ABC):
-    """Abstract base class for all configuration objects."""
+class BaseConfig:
+    """
+    Base configuration class with core functionality.
     
-    @abstractmethod
+    This class provides core configuration functionality including:
+    - Environment detection
+    - Path resolution
+    - Configuration loading and merging
+    - Basic validation
+    """
+    
+    def __init__(
+        self, 
+        environment: Optional[EnvironmentType] = None,
+        project_root: Optional[str] = None,
+        config_dir: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        Initialize base configuration.
+        
+        Args:
+            environment: Optional environment type override
+            project_root: Optional project root path override
+            config_dir: Optional configuration directory override
+            **kwargs: Additional configuration parameters
+        """
+        # Initialize core attributes
+        self.environment = environment
+        self.project_root = project_root
+        self.config_dir = config_dir
+        self.in_runpod = False
+        self.version = "unknown"
+        
+        # Add any additional attributes
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        
+        # Initialize configuration
+        self._initialize()
+    
+    def _initialize(self) -> None:
+        """Initialize configuration with proper setup sequence."""
+        # Detect environment and set up paths
+        self.environment = self._detect_environment()
+        
+        # Load configurations in proper order
+        self._load_default_config()
+        self._load_environment_config()
+        self._load_custom_config()
+        
+        # Validate the configuration
+        self._validate()
+    
+    def _detect_environment(self) -> EnvironmentType:
+        """
+        Detect the execution environment (local or RunPod).
+        
+        This method uses various indicators to determine if the code is running
+        in a RunPod environment or locally.
+        
+        Returns:
+            EnvironmentType.RUNPOD or EnvironmentType.LOCAL
+        """
+        # Start by loading path configuration, which will detect project root
+        from src.config.path_config import get_path_config
+        paths = get_path_config(reset=True)
+        
+        # Use the path configuration's root
+        project_root = paths.get('project_root')
+        fallback = "/workspace" if self._is_runpod() else os.getcwd()
+        
+        # Use the detected project root if available, otherwise fallback
+        if project_root and os.path.exists(project_root):
+            self.project_root = project_root
+        else:
+            logger.warning(f"Could not determine project root, using fallback: {fallback}")
+            self.project_root = fallback
+        
+        # Set common paths
+        self.config_dir = paths.get('configs_dir')
+        self.package_dir = paths.get('package_dir')
+        self.data_dir = paths.get('data_dir')
+        self.models_dir = paths.get('models_dir')
+        self.results_dir = paths.get('results_dir')
+        
+        # Check for RunPod environment
+        self.in_runpod = self._is_runpod()
+        if self.in_runpod:
+            logger.info("✅ Running in RunPod environment")
+            return EnvironmentType.RUNPOD
+        else:
+            logger.info("💻 Running in local environment")
+            return EnvironmentType.LOCAL
+    
+    def _is_runpod(self) -> bool:
+        """
+        Check if the code is running in a RunPod environment.
+        
+        Returns:
+            True if running in RunPod, False otherwise
+        """
+        # Check for RunPod-specific environment variables
+        runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
+        if any(indicator in os.environ for indicator in runpod_indicators):
+            return True
+        
+        # Check for RunPod-specific directories
+        runpod_paths = ["/cache", "/workspace"]
+        if all(os.path.exists(path) for path in runpod_paths):
+            return True
+        
+        # Check Docker cgroup (common in container environments)
+        try:
+            with open('/proc/1/cgroup', 'r') as f:
+                if 'docker' in f.read():
+                    # This is likely a container, possible RunPod
+                    return True
+        except (FileNotFoundError, IOError):
+            # Not on Linux or not in a container
+            pass
+        
+        return False
+    
+    def _load_default_config(self) -> None:
+        """
+        Load default configuration values.
+        
+        This provides a base set of configuration values that are logical defaults
+        for the application.
+        """
+        # Load baseline configuration values
+        base_config = {
+            # Base paths - these should be overridden by _detect_environment
+            "paths": {
+                "base_dir": self.project_root,
+                "config_dir": self.config_dir or os.path.join(self.project_root, "configs"),
+                "data_dir": os.path.join(self.project_root, "data"),
+                "models_dir": os.path.join(self.project_root, "models"),
+                "results_dir": os.path.join(self.project_root, "results"),
+                "logs_dir": os.path.join(self.project_root, "logs"),
+            },
+            
+            # Logging configuration
+            "logging": {
+                "level": "INFO",
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "file_level": "DEBUG",
+                "console_level": "INFO",
+            },
+            
+            # Default extraction fields
+            "fields": ["work_order", "cost", "date"],
+            
+            # Default model configurations
+            "models": {
+                "default_llm": "gpt-4o",
+                "default_ocr": "tesseract",
+            },
+        }
+        
+        # Set attributes on self from the base config
+        for key, value in base_config.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+    
+    def _load_environment_config(self) -> None:
+        """
+        Load environment-specific configuration.
+        
+        This loads configuration specific to the detected environment (LOCAL or RUNPOD).
+        """
+        # Determine environment config file name
+        env_name = str(self.environment).lower()
+        env_config_file = os.path.join(
+            self.config_dir, 
+            "environments", 
+            f"{env_name}.yaml"
+        )
+        
+        # Load environment-specific configuration if it exists
+        if os.path.exists(env_config_file):
+            try:
+                with open(env_config_file, 'r') as f:
+                    env_config = yaml.safe_load(f)
+                
+                # Apply environment configuration
+                self._apply_config(env_config)
+                logger.info(f"Loaded environment configuration from {env_config_file}")
+            except Exception as e:
+                logger.warning(f"Error loading environment config: {e}")
+        else:
+            logger.warning(f"Environment config file not found: {env_config_file}")
+            
+            # Add empty dict to maintain source order
+            self.environment_config = {}
+    
+    def _load_custom_config(self) -> None:
+        """
+        Load custom configuration from a user-provided file.
+        
+        This allows for overriding specific settings without modifying the base or
+        environment configurations.
+        """
+        # Check for custom config file
+        custom_config_file = os.environ.get(
+            "CUSTOM_CONFIG_FILE",
+            os.path.join(self.config_dir, "custom.yaml")
+        )
+        
+        # Load custom configuration if it exists
+        if os.path.exists(custom_config_file):
+            try:
+                with open(custom_config_file, 'r') as f:
+                    custom_config = yaml.safe_load(f)
+                
+                # Apply custom configuration
+                self._apply_config(custom_config)
+                logger.info(f"Loaded custom configuration from {custom_config_file}")
+            except Exception as e:
+                logger.warning(f"Error loading custom config: {e}")
+    
+    def _apply_config(self, config: Dict[str, Any]) -> None:
+        """
+        Apply configuration values to this object.
+        
+        Args:
+            config: Dictionary of configuration values to apply
+        """
+        if not isinstance(config, dict):
+            logger.warning(f"Invalid configuration format: {type(config)}")
+            return
+        
+        # Apply values to attributes
+        for key, value in config.items():
+            # If this is a dict and we already have a dict attribute with the same name,
+            # merge instead of replace
+            if isinstance(value, dict) and hasattr(self, key) and isinstance(getattr(self, key), dict):
+                current = getattr(self, key)
+                current.update(value)
+            else:
+                setattr(self, key, value)
+    
+    def _validate(self) -> List[str]:
+        """
+        Validate the configuration.
+        
+        Returns:
+            List of validation errors or empty list if valid
+        """
+        errors = []
+        
+        # Check critical paths
+        for path_name in ["project_root", "config_dir", "data_dir"]:
+            path = getattr(self, path_name, None)
+            if not path or not os.path.exists(path):
+                errors.append(f"Critical path '{path_name}' is missing or invalid: {path}")
+        
+        # Log validation results
+        if errors:
+            for error in errors:
+                logger.warning(f"Configuration error: {error}")
+        else:
+            logger.info("Configuration validation passed")
+        
+        return errors
+
     def validate(self) -> List[str]:
         """
         Validate the configuration and return a list of validation errors.
@@ -179,7 +449,7 @@ class BaseConfig(ABC):
         Returns:
             List of validation error messages (empty if valid)
         """
-        pass
+        return self._validate()
     
     def is_valid(self) -> bool:
         """
@@ -198,22 +468,45 @@ class BaseConfig(ABC):
             config_type: Optional type name for error messages
             
         Raises:
-            ConfigValidationError: If the configuration is invalid
+            ConfigurationError: If the configuration is invalid
         """
         errors = self.validate()
         if errors:
-            raise ConfigValidationError(
-                errors=errors,
-                config_type=config_type or self.__class__.__name__
+            raise ConfigurationError(
+                f"Invalid {config_type or self.__class__.__name__} configuration: {'; '.join(errors)}"
             )
 
-
-@dataclass
-class ConfigSource:
-    """Represents a source of configuration data."""
-    name: str
-    priority: int
-    data: Dict[str, Any] = field(default_factory=dict)
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get a configuration value by key with dot notation support.
+        
+        Args:
+            key: Configuration key (supports dot notation for nested access)
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+        """
+        # Handle dot notation
+        if '.' in key:
+            parts = key.split('.')
+            curr = self
+            
+            for part in parts:
+                if hasattr(curr, part):
+                    curr = getattr(curr, part)
+                elif isinstance(curr, dict) and part in curr:
+                    curr = curr[part]
+                else:
+                    return default
+            
+            return curr
+        
+        # Direct attribute access
+        if hasattr(self, key):
+            return getattr(self, key)
+        
+        return default
 
 
 class ConfigurationManager:
@@ -301,7 +594,17 @@ class ConfigurationManager:
         if "PROJECT_ROOT" in os.environ:
             project_root = Path(os.environ["PROJECT_ROOT"])
             if project_root.exists():
+                logger.info(f"Using PROJECT_ROOT environment variable: {project_root}")
                 return project_root
+        
+        # Check for RunPod environment
+        if self._is_runpod():
+            # In RunPod, the standard location is /workspace
+            if Path("/workspace").exists():
+                logger.info("RunPod environment detected, using /workspace as project root")
+                # Set the PROJECT_ROOT environment variable for future use
+                os.environ["PROJECT_ROOT"] = "/workspace"
+                return Path("/workspace")
         
         # Look for common project markers
         markers = [".git", "setup.py", "requirements.txt", "README.md"]
@@ -311,6 +614,7 @@ class ConfigurationManager:
         while search_dir != search_dir.parent:  # Stop at the filesystem root
             for marker in markers:
                 if (search_dir / marker).exists():
+                    logger.info(f"Project root marker '{marker}' found at: {search_dir}")
                     return search_dir
             search_dir = search_dir.parent
         
@@ -319,6 +623,35 @@ class ConfigurationManager:
         fallback = current_dir.parent.parent
         logger.warning(f"Could not determine project root, using fallback: {fallback}")
         return fallback
+    
+    def _is_runpod(self) -> bool:
+        """
+        Check if the code is running in a RunPod environment.
+        
+        Returns:
+            True if running in RunPod, False otherwise
+        """
+        # Check for RunPod-specific environment variables
+        runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
+        if any(indicator in os.environ for indicator in runpod_indicators):
+            return True
+        
+        # Check for RunPod-specific directories
+        runpod_paths = ["/cache", "/workspace"]
+        if all(os.path.exists(path) for path in runpod_paths):
+            return True
+        
+        # Check Docker cgroup (common in container environments)
+        try:
+            with open('/proc/1/cgroup', 'r') as f:
+                if 'docker' in f.read():
+                    # This is likely a container, possible RunPod
+                    return True
+        except (FileNotFoundError, IOError):
+            # Not on Linux or not in a container
+            pass
+        
+        return False
     
     def _detect_environment(self) -> EnvironmentType:
         """
@@ -330,139 +663,109 @@ class ConfigurationManager:
         Returns:
             EnvironmentType.RUNPOD or EnvironmentType.LOCAL
         """
-        # Check for RunPod-specific environment variables
-        runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
-        if any(indicator in os.environ for indicator in runpod_indicators):
+        # Start by loading path configuration, which will detect project root
+        from src.config.path_config import get_path_config
+        paths = get_path_config(reset=True)
+        
+        # Use the path configuration's root
+        project_root = paths.get('project_root')
+        fallback = "/workspace" if self._is_runpod() else os.getcwd()
+        
+        # Use the detected project root if available, otherwise fallback
+        if project_root and os.path.exists(project_root):
+            self.project_root = project_root
+        else:
+            logger.warning(f"Could not determine project root, using fallback: {fallback}")
+            self.project_root = fallback
+        
+        # Set common paths
+        self.config_dir = paths.get('configs_dir')
+        self.package_dir = paths.get('package_dir')
+        self.data_dir = paths.get('data_dir')
+        self.models_dir = paths.get('models_dir')
+        self.results_dir = paths.get('results_dir')
+        
+        # Check for RunPod environment
+        self.in_runpod = self._is_runpod()
+        if self.in_runpod:
+            logger.info("✅ Running in RunPod environment")
             return EnvironmentType.RUNPOD
-        
-        # Check for RunPod-specific directories
-        runpod_paths = ["/cache", "/workspace"]
-        if any(os.path.exists(path) for path in runpod_paths):
-            return EnvironmentType.RUNPOD
-        
-        # Check Docker cgroup (common in container environments)
-        try:
-            with open('/proc/1/cgroup', 'r') as f:
-                if 'docker' in f.read():
-                    # This is likely a container, possible RunPod
-                    logger.info("Docker container detected, assuming RunPod environment")
-                    return EnvironmentType.RUNPOD
-        except (FileNotFoundError, IOError):
-            # Not on Linux or not in a container
-            pass
-        
-        # Default to LOCAL environment
+        else:
+            logger.info("💻 Running in local environment")
         return EnvironmentType.LOCAL
     
     def _load_default_config(self) -> None:
         """
         Load default configuration values.
         
-        This method sets up baseline configuration values that apply across all environments.
-        These values have the lowest priority and can be overridden by other sources.
+        This provides a base set of configuration values that are logical defaults
+        for the application.
         """
-        # Default configuration with baseline values
-        defaults = {
-            "environment": {
-                "name": str(self.environment),
-                "type": "development" if self.environment == EnvironmentType.LOCAL else "production"
-            },
+        # Load baseline configuration values
+        base_config = {
+            # Base paths - these should be overridden by _detect_environment
             "paths": {
-                "base_dir": str(self.project_root),
-                "config_dir": str(self.config_dir),
-                "data_dir": str(self.project_root / "data"),
-                "models_dir": str(self.project_root / "models"),
-                "results_dir": str(self.project_root / "results")
+                "base_dir": self.project_root,
+                "config_dir": self.config_dir or os.path.join(self.project_root, "configs"),
+                "data_dir": os.path.join(self.project_root, "data"),
+                "models_dir": os.path.join(self.project_root, "models"),
+                "results_dir": os.path.join(self.project_root, "results"),
+                "logs_dir": os.path.join(self.project_root, "logs"),
             },
+            
+            # Logging configuration
             "logging": {
                 "level": "INFO",
-                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                "file_level": "DEBUG",
+                "console_level": "INFO",
             },
+            
             # Default extraction fields
-            "extraction_fields": {
-                "work_order": {
-                    "name": "work_order",
-                    "display_name": "Work Order Number",
-                    "description": "The work order or job number on the invoice",
-                    "data_type": "string",
-                    "is_required": True,
-                    "csv_column_name": "Work Order Number/Numero de Orden",
-                    "metrics": ["exact_match", "character_error_rate"]
-                },
-                "cost": {
-                    "name": "cost",
-                    "display_name": "Cost",
-                    "description": "The total cost amount on the invoice",
-                    "data_type": "currency",
-                    "is_required": True,
-                    "csv_column_name": "Total",
-                    "metrics": ["exact_match", "numeric_difference", "percentage_error"]
-                }
-            },
+            "fields": ["work_order", "cost", "date"],
+            
             # Default model configurations
             "models": {
-                "pixtral-12b": {
-                    "name": "pixtral-12b",
-                    "display_name": "Pixtral 12B",
-                    "model_type": "pixtral",
-                    "repo_id": "mistral-community/pixtral-12b",
-                    "description": "Pixtral 12B vision-language model",
-                    "gpu_required": True,
-                    "min_gpu_memory_gb": 24.0,
-                    "cpu_fallback": False,
-                    "torch_dtype": "bfloat16",
-                    "prompt_format": "<s>[INST]{instruction}\n{image}[/INST]"
-                }
-            }
+                "default_llm": "gpt-4o",
+                "default_ocr": "tesseract",
+            },
         }
         
-        # Add as lowest priority source
-        self.config_sources.append(ConfigSource(
-            name="defaults",
-            priority=0,
-            data=defaults
-        ))
+        # Set attributes on self from the base config
+        for key, value in base_config.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
     
     def _load_environment_config(self) -> None:
         """
         Load environment-specific configuration.
         
-        This method loads configuration values specific to the current environment
-        (local or RunPod) from the appropriate YAML file.
+        This loads configuration specific to the detected environment (LOCAL or RUNPOD).
         """
-        env_config_path = self.config_dir / "environments" / f"{self.environment}.yaml"
+        # Determine environment config file name
+        env_name = str(self.environment).lower()
+        env_config_file = os.path.join(
+            self.config_dir, 
+            "environments", 
+            f"{env_name}.yaml"
+        )
         
-        if not env_config_path.exists():
-            logger.warning(f"Environment configuration not found: {env_config_path}")
-            # Use empty configuration
-            self.config_sources.append(ConfigSource(
-                name=f"{self.environment}_config",
-                priority=10,
-                data={}
-            ))
-            return
-        
-        try:
-            with open(env_config_path, 'r') as f:
-                env_config = yaml.safe_load(f)
+        # Load environment-specific configuration if it exists
+        if os.path.exists(env_config_file):
+            try:
+                with open(env_config_file, 'r') as f:
+                    env_config = yaml.safe_load(f)
             
-            # Add as environment-specific configuration
-            self.config_sources.append(ConfigSource(
-                name=f"{self.environment}_config",
-                priority=10,
-                data=env_config or {}
-            ))
+                # Apply environment configuration
+                self._apply_config(env_config)
+                logger.info(f"Loaded environment configuration from {env_config_file}")
+            except Exception as e:
+                logger.warning(f"Error loading environment config: {e}")
+            else:
+                logger.warning(f"Environment config file not found: {env_config_file}")
             
-            logger.info(f"Loaded environment configuration from {env_config_path}")
-        
-        except Exception as e:
-            logger.error(f"Error loading environment configuration: {e}")
-            # Add empty configuration to maintain source order
-            self.config_sources.append(ConfigSource(
-                name=f"{self.environment}_config",
-                priority=10,
-                data={}
-            ))
+            # Add empty dict to maintain source order
+            self.environment_config = {}
     
     def _load_custom_config(self, config_path: Union[str, Path]) -> None:
         """
@@ -842,6 +1145,167 @@ class ConfigurationManager:
             Dictionary representation of the configuration
         """
         return self.merged_config
+    
+    def get_notebook_config_summary(self) -> Dict[str, Any]:
+        """
+        Generate a configuration summary suitable for use in notebooks.
+        
+        Returns:
+            Dictionary with configuration summary formatted for notebook display
+        """
+        import platform
+        import sys
+        import shutil
+        import os
+        
+        # Start with basic environment info
+        summary = {
+            "environment": {
+                "platform": platform.platform(),
+                "python_version": platform.python_version(),
+                "python_implementation": platform.python_implementation(),
+                "in_notebook": True,
+                "in_runpod": self.environment == EnvironmentType.RUNPOD
+            },
+            "paths": {
+                "project_root": str(self.project_root),
+                "data_dir": self.get_config_value("paths.data_dir", str(self.project_root / "data")),
+                "models_dir": self.get_config_value("paths.models_dir", str(self.project_root / "models")),
+                "results_dir": self.get_config_value("paths.results_dir", str(self.project_root / "results")),
+                "configs_dir": self.get_config_value("paths.config_dir", str(self.project_root / "configs")),
+                "working_dir": os.getcwd()
+            },
+            "gpu": {
+                "available": False,
+                "device_name": "None",
+                "memory_gb": 0.0,
+                "cuda_version": "None"
+            },
+            "packages": {},
+            "disk_space": {"total_gb": 0, "free_gb": 0, "used_gb": 0}
+        }
+        
+        # Check if GPU is available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                summary["gpu"] = {
+                    "available": True,
+                    "device_name": torch.cuda.get_device_name(0),
+                    "memory_gb": torch.cuda.get_device_properties(0).total_memory / (1024**3),
+                    "cuda_version": torch.version.cuda
+                }
+        except ImportError:
+            summary["gpu"]["available"] = "unknown (torch not installed)"
+        
+        # Get package versions
+        try:
+            import pkg_resources
+            important_packages = [
+                "torch", "numpy", "pandas", "matplotlib", 
+                "transformers", "pillow", "tqdm", "pyyaml"
+            ]
+            
+            for package in important_packages:
+                try:
+                    version = pkg_resources.get_distribution(package).version
+                    summary["packages"][package] = version
+                except:
+                    summary["packages"][package] = "not installed"
+        except ImportError:
+            pass
+        
+        # Get disk space information
+        try:
+            total, used, free = shutil.disk_usage("/")
+            summary["disk_space"] = {
+                "total_gb": total / (1024**3),
+                "used_gb": used / (1024**3),
+                "free_gb": free / (1024**3)
+            }
+        except:
+            pass
+        
+        return summary
+    
+    def export_notebook_config(self, export_path: Optional[str] = None) -> str:
+        """
+        Export notebook configuration summary to a JSON file.
+        
+        Args:
+            export_path: Path to export the summary (if None, a default path is used)
+        
+        Returns:
+            Path to the exported file
+        """
+        import json
+        import time
+        import os
+        from pathlib import Path
+        
+        # Get the config summary
+        summary = self.get_notebook_config_summary()
+        
+        if export_path is None:
+            # Use results directory if configured, otherwise use project root
+            results_dir = self.get_config_value("paths.results_dir", str(self.project_root / "results"))
+            os.makedirs(results_dir, exist_ok=True)
+            
+            # Create a timestamped filename
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            export_path = os.path.join(results_dir, f"config_summary_{timestamp}.json")
+        
+        # Export as JSON
+        with open(export_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        
+        logger.info(f"Configuration summary exported to: {export_path}")
+        return export_path
+
+    def _apply_config(self, config: Dict[str, Any]) -> None:
+        """
+        Apply configuration values to this object.
+        
+        Args:
+            config: Dictionary of configuration values to apply
+        """
+        if not isinstance(config, dict):
+            logger.warning(f"Invalid configuration format: {type(config)}")
+            return
+        
+        # Apply values to attributes
+        for key, value in config.items():
+            # If this is a dict and we already have a dict attribute with the same name,
+            # merge instead of replace
+            if isinstance(value, dict) and hasattr(self, key) and isinstance(getattr(self, key), dict):
+                current = getattr(self, key)
+                current.update(value)
+            else:
+                setattr(self, key, value)
+
+    def _validate(self) -> List[str]:
+        """
+        Validate the configuration.
+        
+        Returns:
+            List of validation errors or empty list if valid
+        """
+        errors = []
+        
+        # Check critical paths
+        for path_name in ["project_root", "config_dir", "data_dir"]:
+            path = getattr(self, path_name, None)
+            if not path or not os.path.exists(path):
+                errors.append(f"Critical path '{path_name}' is missing or invalid: {path}")
+        
+        # Log validation results
+        if errors:
+            for error in errors:
+                logger.warning(f"Configuration error: {error}")
+        else:
+            logger.info("Configuration validation passed")
+        
+        return errors
 
 
 # Create a singleton instance
@@ -860,3 +1324,21 @@ def get_config_manager() -> ConfigurationManager:
         _config_manager = ConfigurationManager()
     
     return _config_manager
+
+def get_environment_config() -> Any:
+    """
+    Get the global environment configuration.
+    
+    This imports and returns the result of get_environment_config from the
+    environment_config module, avoiding circular imports.
+    
+    Returns:
+        EnvironmentConfig instance
+    """
+    try:
+        from src.config.environment_config import get_environment_config as get_env_config
+        return get_env_config()
+    except ImportError as e:
+        logger.warning(f"Failed to import environment config: {e}")
+        # Return a BaseConfig instance as a fallback
+        return BaseConfig()

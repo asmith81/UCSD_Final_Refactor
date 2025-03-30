@@ -355,8 +355,8 @@ try:
             if 'architecture' in model and model['architecture'] != "Unknown":
                 print(f"      Architecture: {model['architecture']}")
     else:
-        print("ℹ️ No pre-downloaded models found locally.")
-        print("   This is normal - models will be downloaded automatically when you run your first experiment.")
+        print("ℹ️ No models found in registry or config folder.")
+        print("   Please add model configuration files to configs/models/ directory or install models to your models directory.")
         
     # List recommended models
     print("\n🌟 Recommended Models")
@@ -366,21 +366,21 @@ try:
     try:
         from src.models.registry import get_available_model_configs
         
-        print("These models are configured and ready to use in your experiments:")
         model_configs = get_available_model_configs()
-        for model_name, config in model_configs.items():
-            memory_req = config.get("memory_requirements", {}).get("gpu_gb", "Unknown")
-            model_type = config.get("model_type", "Unknown")
-            specialist = "✓" if config.get("is_invoice_specialist", False) else " "
-            print(f"   • {model_name}: {model_type} model, ~{memory_req} GB GPU required, Invoice Specialist: {specialist}")
+        if model_configs:
+            print("These models are configured and ready to use in your experiments:")
+            for model_name, config in model_configs.items():
+                memory_req = config.get("memory_requirements", {}).get("gpu_gb", "Unknown")
+                model_type = config.get("model_type", "Unknown")
+                specialist = "✓" if config.get("is_invoice_specialist", False) else " "
+                print(f"   • {model_name}: {model_type} model, ~{memory_req} GB GPU required, Invoice Specialist: {specialist}")
+        else:
+            print("⚠️ No models configured in the registry.")
+            print("   Please add model configuration files to the configs/models/ directory.")
     except ImportError:
-        # Fallback recommended models
-        print("Common models you can use include:")
-        print("   • 'phi-2': Smaller model (2.7B params), works on limited GPU memory or CPU")
-        print("   • 'llava-1.5-7b': Mid-sized multimodal model (7B params), good balance of performance and speed")
-        print("   • 'llava-1.5-13b': Larger multimodal model (13B params), better performance but requires more GPU memory")
-        print("   • 'bakllava-1': Mixture of experts model based on Mixtral, excellent performance but high memory requirements")
-        
+        print("⚠️ Model registry not available.")
+        print("   To properly configure models, please ensure the src/models/registry.py module is accessible.")
+    
     print("\n⚙️ How Model Selection Works")
     print("-------------------------")
     print("1. When you create an experiment, you specify which model to use")
@@ -428,15 +428,11 @@ except ImportError:
             for model_dir in model_dirs:
                 print(f"   📦 {model_dir}")
         else:
-            print("ℹ️ No model directories found - models will be downloaded when needed.")
+            print("⚠️ No models found in local directories.")
+            print("   Please add model configuration files to configs/models/ directory or install models to your models directory.")
             
-        print("\nCommon models you can use include:")
-        print("   • 'phi-2': Smaller model, works on limited GPU memory")
-        print("   • 'llava-1.5-7b': Mid-sized multimodal model, good balance")
-        print("   • 'llava-1.5-13b': Larger model, better performance")
-    else:
-        print("ℹ️ Models directory not found.")
-        print("A models directory will be created when you run your first experiment.")
+        print("\n⚠️ Model registry not available.")
+        print("   To properly configure models, please ensure the src/models/registry.py module is accessible.")
 
 # %% [markdown]
 # ## 6. Data Validation

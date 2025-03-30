@@ -18,6 +18,7 @@ import pkg_resources
 import json
 import shutil
 import warnings
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -26,6 +27,27 @@ logger = logging.getLogger("setup_utils")
 # Suppress specific warnings
 warnings.filterwarnings("ignore", message="torch.distributed.reduce_op is deprecated")
 warnings.filterwarnings("ignore", message="torch._C._jit_set_profiling_executor")
+
+# Import configuration system components
+try:
+    # Updated imports to reflect new architecture
+    from src.config.path_config import get_path_config, get_paths
+    
+    # Try to import environment_config but handle failure gracefully
+    try:
+        from src.config.environment_config import get_environment_config
+        ENV_CONFIG_AVAILABLE = True
+    except ImportError as e:
+        ENV_CONFIG_AVAILABLE = False
+        logger.warning(f"Environment config not available: {e}")
+    
+    CONFIG_SYSTEM_AVAILABLE = True
+    logger.info("Configuration system available, using integrated approach")
+except ImportError as e:
+    CONFIG_SYSTEM_AVAILABLE = False
+    ENV_CONFIG_AVAILABLE = False
+    logger.warning(f"Configuration system not available: {e}")
+    logger.warning("Using standalone implementation for notebook setup")
 
 
 def validate_environment() -> Dict[str, bool]:
@@ -124,16 +146,76 @@ def check_gpu_availability() -> Dict[str, Any]:
     """
     Check GPU availability and provide detailed information.
     
+    This function uses the environment configuration when available,
+    with a fallback to the standalone implementation.
+    
     Returns:
         Dictionary with GPU information
     """
+    if CONFIG_SYSTEM_AVAILABLE:
+        try:
+            # Try to use the environment configuration
+            logger.info("Using environment configuration for GPU check")
+            env_config = get_environment_config()
+            
+            # Get GPU info from environment config
+            # Use direct attributes instead of hardware_info
+            gpu_available = env_config._is_cuda_available()
+            
+            gpu_info = {
+                "available": gpu_available,
+                "name": "Unknown" if not gpu_available else "NVIDIA GPU",
+                "memory_total": 0,
+                "memory_total_gb": 0,
+                "memory_free": 0,
+                "memory_free_gb": 0,
+                "cuda_version": "Unknown",
+                "device_count": 0,
+                "driver_version": "Unknown"
+            }
+            
+            # Try to get more detailed info if GPU is available
+            if gpu_available:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        gpu_info["name"] = torch.cuda.get_device_name(0)
+                        gpu_info["device_count"] = torch.cuda.device_count()
+                        total_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                        gpu_info["memory_total_gb"] = total_mem
+                        gpu_info["memory_total"] = total_mem
+                        # Estimate free memory
+                        gpu_info["memory_free_gb"] = total_mem  # Simplification
+                        gpu_info["memory_free"] = total_mem     # Simplification
+                        gpu_info["cuda_version"] = torch.version.cuda
+                except Exception as e:
+                    logger.warning(f"Could not get detailed GPU info: {e}")
+            
+            if gpu_info["available"]:
+                logger.info(f"GPU: {gpu_info['name']}")
+                logger.info(f"CUDA Version: {gpu_info['cuda_version']}")
+                logger.info(f"Total Memory: {gpu_info['memory_total_gb']:.2f} GB")
+                logger.info(f"Free Memory: {gpu_info['memory_free_gb']:.2f} GB")
+            
+            return gpu_info
+        
+        except Exception as e:
+            logger.warning(f"Error using environment configuration for GPU check: {e}")
+            logger.warning("Falling back to standalone implementation")
+    
+    # Standalone implementation (original code)
+    logger.info("Using standalone implementation for GPU check")
+    
     gpu_info = {
         "available": False,
         "name": "Not available",
         "memory_total": 0,
         "memory_free": 0,
+        "memory_total_gb": 0.0,
+        "memory_free_gb": 0.0,
         "cuda_version": None,
-        "device_count": 0
+        "device_count": 0,
+        "driver_version": "None"
     }
     
     try:
@@ -146,18 +228,31 @@ def check_gpu_availability() -> Dict[str, Any]:
             gpu_info["cuda_version"] = torch.version.cuda
             
             # Get memory information
-            gpu_info["memory_total"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # Convert to GB
+            total_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # Convert to GB
+            gpu_info["memory_total"] = total_memory
+            gpu_info["memory_total_gb"] = total_memory
             
             # Reserved memory calculation (rough estimate)
             torch.cuda.empty_cache()
             allocated = torch.cuda.memory_allocated(0) / (1024**3)
             reserved = torch.cuda.memory_reserved(0) / (1024**3)
-            gpu_info["memory_free"] = gpu_info["memory_total"] - reserved
+            free_memory = total_memory - reserved
+            gpu_info["memory_free"] = free_memory
+            gpu_info["memory_free_gb"] = free_memory
+            
+            # Try to get driver version
+            try:
+                gpu_info["driver_version"] = torch.version.cuda
+                # On some systems we might be able to get the actual driver version
+                if hasattr(torch.cuda, 'get_driver_version'):
+                    gpu_info["driver_version"] = torch.cuda.get_driver_version()
+            except:
+                pass
             
             logger.info(f"GPU: {gpu_info['name']}")
             logger.info(f"CUDA Version: {gpu_info['cuda_version']}")
-            logger.info(f"Total Memory: {gpu_info['memory_total']:.2f} GB")
-            logger.info(f"Free Memory: {gpu_info['memory_free']:.2f} GB")
+            logger.info(f"Total Memory: {gpu_info['memory_total_gb']:.2f} GB")
+            logger.info(f"Free Memory: {gpu_info['memory_free_gb']:.2f} GB")
         else:
             logger.warning("No GPU available")
     except ImportError:
@@ -175,22 +270,73 @@ def configure_paths(
     configs_dir: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    Configure system paths and set environment variables.
+    Configure paths for the invoice extraction system.
+    
+    This function sets up paths using the path configuration system when available,
+    with a fallback to a standalone implementation.
     
     Args:
         data_dir: Optional path to data directory
         models_dir: Optional path to models directory
         results_dir: Optional path to results directory
-        configs_dir: Optional path to configs directory
+        configs_dir: Optional path to configuration directory
         
     Returns:
         Dictionary with configured paths
     """
+    # Create custom paths dictionary if any paths were provided
+    custom_paths = {}
+    if data_dir: custom_paths['data_dir'] = data_dir
+    if models_dir: custom_paths['models_dir'] = models_dir
+    if results_dir: custom_paths['results_dir'] = results_dir
+    if configs_dir: custom_paths['config_dir'] = configs_dir
+    
+    if CONFIG_SYSTEM_AVAILABLE:
+        try:
+            # Try to use the path configuration system
+            logger.info("Using path configuration system")
+            
+            # Initialize or reset the path configuration with custom paths
+            path_config = get_path_config(
+                custom_paths=custom_paths if custom_paths else None,
+                reset=True
+            )
+            
+            # Get all paths
+            paths = get_paths()
+            
+            # Set environment variables for configured paths
+            for key, path in paths.items():
+                env_var = key.upper()
+                os.environ[env_var] = str(path)
+                logger.debug(f"Set environment variable {env_var}={path}")
+            
+            # Log configured paths
+            logger.info(f"Configured paths:")
+            for key in ['project_root', 'data_dir', 'models_dir', 'results_dir', 'config_dir']:
+                if key in paths:
+                    exists = os.path.exists(paths[key])
+                    status = "✓" if exists else "✗"
+                    logger.info(f"{status} {key}: {paths[key]}")
+            
+            return paths
+            
+        except Exception as e:
+            logger.warning(f"Error using path configuration system: {e}")
+            logger.warning("Falling back to standalone implementation")
+    
+    # Standalone implementation (original code)
+    logger.info("Using standalone implementation for path configuration")
+    
     # Determine base directory (project root)
     base_dir = Path(os.getcwd())
     if not (base_dir / "src").exists():
         if (base_dir.parent / "src").exists():
             base_dir = base_dir.parent
+    
+    # In RunPod, use /workspace as project root if available
+    if os.path.exists("/workspace"):
+        base_dir = Path("/workspace")
     
     # Set default paths if not provided
     if not data_dir:
@@ -209,20 +355,24 @@ def configure_paths(
     Path(configs_dir).mkdir(exist_ok=True)
     
     # Set environment variables
+    os.environ["PROJECT_ROOT"] = str(base_dir)
     os.environ["DATA_DIR"] = data_dir
     os.environ["MODELS_DIR"] = models_dir
     os.environ["RESULTS_DIR"] = results_dir
     os.environ["CONFIGS_DIR"] = configs_dir
+    os.environ["LOGS_DIR"] = str(base_dir / "logs")
     
     # Set environment variable to indicate we're in a notebook environment
     os.environ["IN_NOTEBOOK"] = "1"
     
     paths = {
+        "project_root": str(base_dir),
         "base_dir": str(base_dir),
         "data_dir": data_dir,
         "models_dir": models_dir,
         "results_dir": results_dir,
-        "configs_dir": configs_dir
+        "configs_dir": configs_dir,
+        "logs_dir": str(base_dir / "logs")
     }
     
     logger.info("Paths configured:")
@@ -232,8 +382,9 @@ def configure_paths(
     # Create .env file for future runs
     env_file = base_dir / ".env"
     with open(env_file, "w") as f:
+        f.write(f"PROJECT_ROOT={str(base_dir)}\n")
         for key, path in paths.items():
-            if key != "base_dir":
+            if key not in ["base_dir", "project_root"]:
                 f.write(f"{key.upper()}={path}\n")
         f.write("USE_GPU=True\n")
     
@@ -304,12 +455,14 @@ def install_dependencies(
         return False
 
 
-def test_model_loading(model_name: str = "small") -> Dict[str, Any]:
+def test_model_loading(model_name: str = "small", model_repo: Optional[str] = None, test_inputs: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Test loading a model to verify setup.
     
     Args:
         model_name: Name of the model to test load (small/medium/large)
+        model_repo: Optional repository ID to use for loading the model
+        test_inputs: Optional list of test inputs for the model
         
     Returns:
         Dictionary with test results
@@ -396,74 +549,164 @@ def test_model_loading(model_name: str = "small") -> Dict[str, Any]:
 
 
 def setup_notebook_environment(
-    check_gpu: bool = True,
-    install_missing: bool = True,
-    verify_model: bool = True,
-    model_name: str = "small"
+    configure_system: bool = True,
+    verify_dependencies: bool = True,
+    verify_gpu: bool = True,
+    verify_model_loading: bool = False,
+    model_name: str = "pixtral-12b",
+    model_repo: Optional[str] = None,
+    test_inputs: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
-    Complete setup function for notebook environment.
+    Set up the notebook environment for extraction tasks.
+    
+    This function integrates with the configuration system when available,
+    with fallbacks to standalone implementations.
     
     Args:
-        check_gpu: Whether to check GPU availability
-        install_missing: Whether to install missing packages
-        verify_model: Whether to verify model loading
-        model_name: Model name to verify if verify_model is True
+        configure_system: Whether to configure paths and environment variables
+        verify_dependencies: Whether to verify and potentially install dependencies
+        verify_gpu: Whether to verify GPU availability
+        verify_model_loading: Whether to test loading the model
+        model_name: Name of the model to test loading
+        model_repo: Optional repository ID to use for loading the model
+        test_inputs: Optional list of test inputs for the model
         
     Returns:
         Dictionary with setup results
     """
-    results = {
-        "environment_valid": False,
-        "gpu_available": False,
+    logger.info("Setting up notebook environment")
+    
+    # Track setup progress
+    setup_results = {
+        "environment_validated": False,
         "paths_configured": False,
+        "gpu_available": False,
         "dependencies_installed": False,
-        "model_verified": False
+        "model_loaded": False,
+        "system_info": None
     }
     
-    # Step 1: Validate environment
-    logger.info("Step 1: Validating environment")
-    env_validation = validate_environment()
-    results["environment_valid"] = all(env_validation.values())
+    if CONFIG_SYSTEM_AVAILABLE:
+        try:
+            # Try to use the configuration system for setup
+            logger.info("Using configuration system for environment setup")
+            
+            # Get configuration manager and environment configuration
+            config_manager = get_config_manager()
+            env_config = get_environment_config()
+            
+            # Configure paths if requested
+            if configure_system:
+                # Configure using path_config
+                path_config = get_path_config()
+                setup_results["paths_configured"] = True
+                
+                # Extract paths for backward compatibility
+                paths = {
+                    "project_root": str(path_config.get_path('project_root') or '/workspace'),
+                    "data_dir": str(path_config.get_path('data_dir')),
+                    "models_dir": str(path_config.get_path('models_dir')),
+                    "results_dir": str(path_config.get_path('results_dir')),
+                    "configs_dir": str(path_config.get_path('configs_dir')),
+                    "logs_dir": str(path_config.get_path('logs_dir')),
+                    "working_dir": os.getcwd()
+                }
+                setup_results["paths"] = paths
+            
+            # Verify GPU if requested
+            if verify_gpu:
+                # Check GPU using environment config
+                gpu_info = check_gpu_availability()
+                setup_results["gpu_available"] = gpu_info["available"]
+                setup_results["gpu_info"] = gpu_info
+            
+            # Install dependencies if requested
+            if verify_dependencies:
+                # Check dependencies using environment config
+                dependencies = env_config.dependencies
+                if dependencies.missing_packages:
+                    logger.warning(f"Missing dependencies: {dependencies.missing_packages}")
+                    # Install missing dependencies
+                    setup_results["dependencies_installed"] = install_dependencies(dependencies.missing_packages)
+                else:
+                    setup_results["dependencies_installed"] = True
+            
+            # Verify model loading if requested
+            if verify_model_loading:
+                try:
+                    # Use model configuration from config manager
+                    model_config = config_manager.get_model_config(model_name)
+                    if model_config:
+                        model_repo = model_repo or model_config.repo_id
+                    
+                    # Test model loading
+                    model_results = test_model_loading(
+                        model_name=model_name,
+                        model_repo=model_repo,
+                        test_inputs=test_inputs
+                    )
+                    setup_results["model_loaded"] = model_results["success"]
+                    setup_results["model_results"] = model_results
+                except Exception as e:
+                    logger.error(f"Error loading model: {e}")
+                    setup_results["model_loaded"] = False
+                    setup_results["model_error"] = str(e)
+            
+            # Get system information
+            setup_results["system_info"] = get_system_info()
+            
+            # Mark environment as validated
+            setup_results["environment_validated"] = True
+            return setup_results
+            
+        except Exception as e:
+            logger.warning(f"Error using configuration system for setup: {e}")
+            logger.warning("Falling back to standalone implementation")
     
-    # Step 2: Check GPU availability
-    if check_gpu:
-        logger.info("Step 2: Checking GPU availability")
+    # Standalone implementation (original code)
+    logger.info("Using standalone implementation for environment setup")
+    
+    # Validate basic environment
+    validate_results = validate_environment()
+    setup_results["environment_validated"] = all(validate_results.values())
+    
+    # Configure paths if requested
+    if configure_system:
+        paths = configure_paths()
+        setup_results["paths_configured"] = True
+        setup_results["paths"] = paths
+    
+    # Check GPU availability if requested
+    if verify_gpu:
         gpu_info = check_gpu_availability()
-        results["gpu_available"] = gpu_info["available"]
-        results["gpu_info"] = gpu_info
+        setup_results["gpu_available"] = gpu_info["available"]
+        setup_results["gpu_info"] = gpu_info
     
-    # Step 3: Configure paths
-    logger.info("Step 3: Configuring paths")
-    paths = configure_paths()
-    results["paths_configured"] = True
-    results["paths"] = paths
+    # Install dependencies if requested
+    if verify_dependencies:
+        dep_result = install_dependencies()
+        setup_results["dependencies_installed"] = dep_result
     
-    # Step 4: Install missing dependencies
-    if install_missing and not env_validation["required_packages"]:
-        logger.info("Step 4: Installing missing dependencies")
-        install_success = install_dependencies()
-        results["dependencies_installed"] = install_success
-    else:
-        results["dependencies_installed"] = env_validation["required_packages"]
+    # Test model loading if requested
+    if verify_model_loading:
+        try:
+            model_results = test_model_loading(
+                model_name=model_name,
+                model_repo=model_repo,
+                test_inputs=test_inputs
+            )
+            setup_results["model_loaded"] = model_results["success"]
+            setup_results["model_results"] = model_results
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            setup_results["model_loaded"] = False
+            setup_results["model_error"] = str(e)
     
-    # Step 5: Verify model loading
-    if verify_model and results["gpu_available"]:
-        logger.info("Step 5: Verifying model loading")
-        model_test = test_model_loading(model_name)
-        results["model_verified"] = model_test["success"]
-        results["model_test"] = model_test
+    # Get system information
+    setup_results["system_info"] = get_system_info()
     
-    # Final status
-    logger.info("Environment setup complete.")
-    logger.info(f"Environment valid: {results['environment_valid']}")
-    logger.info(f"GPU available: {results['gpu_available']}")
-    logger.info(f"Paths configured: {results['paths_configured']}")
-    logger.info(f"Dependencies installed: {results['dependencies_installed']}")
-    if verify_model:
-        logger.info(f"Model verified: {results['model_verified']}")
-    
-    return results
+    return setup_results
 
 
 def get_system_info() -> Dict[str, Any]:
@@ -476,10 +719,15 @@ def get_system_info() -> Dict[str, Any]:
     info = {
         "platform": platform.platform(),
         "python_version": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "python_path": sys.executable,
         "processor": platform.processor(),
         "memory": None,
         "gpu": None,
-        "packages": {}
+        "packages": {},
+        "env_vars": {},
+        "disk_space": {"total_gb": 0, "free_gb": 0, "used_gb": 0},
+        "in_runpod": False
     }
     
     # Get RAM information
@@ -520,7 +768,293 @@ def get_system_info() -> Dict[str, Any]:
         except:
             info["packages"][package] = "not installed"
     
+    # Get environment variables that might be useful
+    for env_var in ["CUDA_VISIBLE_DEVICES", "RUNPOD_POD_ID", "GPU_NAME"]:
+        if env_var in os.environ:
+            info["env_vars"][env_var] = os.environ[env_var]
+    
+    # Check for RunPod environment
+    info["in_runpod"] = "RUNPOD_POD_ID" in os.environ or "H100" in os.environ.get("GPU_NAME", "")
+    
+    # Get disk space information
+    try:
+        total, used, free = shutil.disk_usage("/")
+        info["disk_space"] = {
+            "total_gb": total / (1024**3),
+            "used_gb": used / (1024**3),
+            "free_gb": free / (1024**3)
+        }
+    except:
+        pass
+    
     return info
+
+
+def get_config_summary() -> Dict[str, Any]:
+    """
+    Generate a configuration summary for notebooks.
+    
+    This function uses the path configuration to get a structured configuration
+    summary when available, with a fallback to the standalone implementation.
+    
+    Returns:
+        Dictionary with organized configuration summary
+    """
+    if CONFIG_SYSTEM_AVAILABLE:
+        try:
+            # Try to use the path_config system
+            logger.info("Using Path Configuration for configuration summary")
+            
+            # Get paths from the path configuration
+            paths = get_paths()
+            
+            # Get system information
+            sys_info = get_system_info()
+            
+            # Build the summary
+            summary = {
+                "environment": {
+                    "platform": sys_info["platform"],
+                    "python_version": sys_info["python_version"],
+                    "python_implementation": sys_info["python_implementation"],
+                    "in_notebook": "IN_NOTEBOOK" in os.environ,
+                    "in_runpod": sys_info["in_runpod"]
+                },
+                "paths": paths,
+                "gpu": sys_info["gpu"],
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            # Try to add environment config if available
+            if ENV_CONFIG_AVAILABLE:
+                try:
+                    env_config = get_environment_config()
+                    summary["environment"].update({
+                        "env_type": env_config.env_type,
+                        "env_name": env_config.name
+                    })
+                except Exception as e:
+                    logger.warning(f"Could not add environment config details: {e}")
+            
+            logger.info("Generated configuration summary")
+            return summary
+        
+        except Exception as e:
+            logger.warning(f"Error generating configuration summary: {e}")
+            logger.warning("Falling back to standalone implementation")
+    
+    # Standalone implementation (original code)
+    logger.info("Using standalone implementation for configuration summary")
+    
+    # Fall back to the original implementation
+    sys_info = get_system_info()
+    
+    # Determine project root
+    project_root = os.environ.get("PROJECT_ROOT", "/workspace")
+    if not os.path.exists(project_root):
+        if os.path.exists("/workspace"):
+            project_root = "/workspace"
+        else:
+            project_root = os.getcwd()
+    
+    # Structure for config summary
+    summary = {
+        "environment": {
+            "platform": sys_info["platform"],
+            "python_version": sys_info["python_version"],
+            "python_implementation": sys_info["python_implementation"],
+            "in_notebook": "IN_NOTEBOOK" in os.environ,
+            "in_runpod": sys_info["in_runpod"]
+        },
+        "paths": {
+            "project_root": project_root,
+            "data_dir": os.environ.get("DATA_DIR", os.path.join(project_root, "data")),
+            "models_dir": os.environ.get("MODELS_DIR", os.path.join(project_root, "models")),
+            "results_dir": os.environ.get("RESULTS_DIR", os.path.join(project_root, "results")),
+            "configs_dir": os.environ.get("CONFIGS_DIR", os.path.join(project_root, "configs")),
+            "working_dir": os.getcwd()
+        },
+        "gpu": {
+            "available": False,
+            "device_name": "None",
+            "memory_gb": 0.0,
+            "cuda_version": "None"
+        },
+        "packages": sys_info["packages"],
+        "disk_space": sys_info["disk_space"]
+    }
+    
+    # Fill in GPU info if available
+    if sys_info["gpu"] is not None:
+        summary["gpu"] = {
+            "available": True,
+            "device_name": sys_info["gpu"]["name"],
+            "memory_gb": sys_info["gpu"]["memory_total"],
+            "cuda_version": sys_info["gpu"]["cuda_version"]
+        }
+    
+    return summary
+
+
+def export_config_summary(summary: Dict[str, Any], export_path: Optional[str] = None) -> str:
+    """
+    Export configuration summary to a JSON file.
+    
+    This function uses the ConfigurationManager to export the configuration when available,
+    with a fallback to the standalone implementation.
+    
+    Args:
+        summary: Configuration summary dictionary
+        export_path: Path to export the summary (if None, a default path is used)
+        
+    Returns:
+        Path to the exported file
+    """
+    if CONFIG_SYSTEM_AVAILABLE:
+        try:
+            # Try to use the ConfigurationManager for export
+            logger.info("Using ConfigurationManager for export")
+            
+            if export_path is not None:
+                return get_config_manager().export_notebook_config(export_path)
+            else:
+                # If summary was provided but not generated by ConfigurationManager,
+                # still use it with our own export logic
+                if summary is not None:
+                    # Fallback to direct export below
+                    raise ValueError("Using provided summary with fallback export")
+                return get_config_manager().export_notebook_config()
+        
+        except Exception as e:
+            logger.warning(f"Error using ConfigurationManager for export: {e}")
+            logger.warning("Falling back to standalone implementation")
+    
+    # Standalone implementation (original code)
+    logger.info("Using standalone implementation for export")
+    
+    if export_path is None:
+        # Get the project root as the base for the export
+        project_root = summary["paths"]["project_root"]
+        # Use results directory if available, otherwise use project root
+        results_dir = os.environ.get("RESULTS_DIR", os.path.join(project_root, "results"))
+        os.makedirs(results_dir, exist_ok=True)
+        # Create a timestamped filename
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        export_path = os.path.join(results_dir, f"config_summary_{timestamp}.json")
+    
+    # Export as JSON
+    with open(export_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    
+    logger.info(f"Configuration summary exported to: {export_path}")
+    return export_path
+
+
+def get_notebook_paths() -> Dict[str, str]:
+    """
+    Get path dictionary configured for use in notebooks.
+    
+    Returns:
+        Dictionary with configured paths, including project_root
+    """
+    # Determine project root
+    project_root = os.environ.get("PROJECT_ROOT")
+    if not project_root or not os.path.exists(project_root):
+        # Try using /workspace for RunPod
+        if os.path.exists("/workspace"):
+            project_root = "/workspace"
+        else:
+            current_dir = os.getcwd()
+            # Look for src directory
+            if os.path.exists(os.path.join(current_dir, "src")):
+                project_root = current_dir
+            elif os.path.exists(os.path.join(os.path.dirname(current_dir), "src")):
+                project_root = os.path.dirname(current_dir)
+            else:
+                # Fallback to current directory
+                project_root = current_dir
+    
+    # Set as environment variable
+    os.environ["PROJECT_ROOT"] = project_root
+    
+    # Configure paths
+    paths = {
+        "project_root": project_root,
+        "data_dir": os.environ.get("DATA_DIR", os.path.join(project_root, "data")),
+        "models_dir": os.environ.get("MODELS_DIR", os.path.join(project_root, "models")),
+        "results_dir": os.environ.get("RESULTS_DIR", os.path.join(project_root, "results")),
+        "configs_dir": os.environ.get("CONFIGS_DIR", os.path.join(project_root, "configs")),
+        "logs_dir": os.environ.get("LOGS_DIR", os.path.join(project_root, "logs")),
+        "working_dir": os.getcwd()
+    }
+    
+    # Ensure directories exist
+    for key, path in paths.items():
+        if key != "working_dir" and key != "project_root":
+            os.makedirs(path, exist_ok=True)
+    
+    return paths
+
+
+def fix_notebook_paths(paths_dict):
+    """
+    Fix paths dictionary for notebook by ensuring project_root is set.
+    
+    This function can be called directly in a notebook cell to fix path issues.
+    
+    Args:
+        paths_dict: The existing paths dictionary to fix
+        
+    Returns:
+        Updated paths dictionary with project_root set
+    """
+    # Make a copy of the dictionary to avoid modifying the original
+    fixed_paths = paths_dict.copy() if paths_dict else {}
+    
+    # Ensure project_root is set
+    if 'project_root' not in fixed_paths or not fixed_paths['project_root']:
+        # Get project root from environment or use a fallback
+        project_root = os.environ.get("PROJECT_ROOT")
+        if not project_root or not os.path.exists(project_root):
+            # Try using /workspace for RunPod
+            if os.path.exists("/workspace"):
+                project_root = "/workspace"
+            else:
+                # Fallback to current directory or parent
+                current_dir = os.getcwd()
+                if os.path.exists(os.path.join(current_dir, "src")):
+                    project_root = current_dir
+                elif os.path.exists(os.path.join(os.path.dirname(current_dir), "src")):
+                    project_root = os.path.dirname(current_dir)
+                else:
+                    project_root = current_dir
+        
+        # Set project_root in the paths dictionary
+        fixed_paths['project_root'] = project_root
+        
+        # Log the fix
+        logger.info(f"Fixed missing project_root in paths: {project_root}")
+    
+    # Ensure all standard path keys exist
+    standard_paths = ["data_dir", "models_dir", "results_dir", "configs_dir", "logs_dir"]
+    project_root = fixed_paths['project_root']
+    
+    for path_key in standard_paths:
+        if path_key not in fixed_paths or not fixed_paths[path_key]:
+            # Create standard path from project_root
+            fixed_paths[path_key] = os.path.join(project_root, path_key.replace('_dir', ''))
+            logger.info(f"Added missing {path_key}: {fixed_paths[path_key]}")
+    
+    return fixed_paths
+
+
+def _is_runpod_env() -> bool:
+    """Check if running in RunPod environment."""
+    if any(var in os.environ for var in ["RUNPOD_POD_ID", "RUNPOD_API_KEY"]):
+        return True
+    if Path("/workspace").exists() and Path("/runpod").exists():
+        return True
+    return False
 
 
 if __name__ == "__main__":

@@ -13,6 +13,65 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Tuple
 from dataclasses import asdict
 
+# Import utilities from setup_utils
+try:
+    from src.notebook.setup_utils import get_system_info
+except ImportError:
+    logger.warning("Could not import get_system_info from setup_utils")
+    
+    # Define fallback get_system_info function
+    def get_system_info() -> Dict[str, Any]:
+        """
+        Fallback function to get basic system information.
+        
+        Returns:
+            Dictionary with basic system information
+        """
+        import platform
+        import sys
+        
+        info = {
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
+            "python_path": sys.executable,
+            "processor": platform.processor(),
+            "packages": {},
+            "in_runpod": os.path.exists("/workspace") and os.path.exists("/cache")
+        }
+        
+        # Get package versions
+        try:
+            import pkg_resources
+            important_packages = [
+                "torch", "numpy", "pandas", "transformers"
+            ]
+            
+            for package in important_packages:
+                try:
+                    version = pkg_resources.get_distribution(package).version
+                    info["packages"][package] = version
+                except:
+                    info["packages"][package] = "not installed"
+        except:
+            pass
+            
+        # Check GPU availability
+        info["gpu"] = {"available": False}
+        try:
+            import torch
+            if torch.cuda.is_available():
+                info["gpu"] = {
+                    "available": True,
+                    "name": torch.cuda.get_device_name(0),
+                    "count": torch.cuda.device_count(),
+                    "cuda_version": torch.version.cuda,
+                }
+        except:
+            pass
+            
+        return info
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("experiment_utils")
@@ -20,40 +79,107 @@ logger = logging.getLogger("experiment_utils")
 
 def list_available_models() -> List[Dict[str, Any]]:
     """
-    List all available models in the models directory.
+    List all available models from both model files and configuration files.
     
     Returns:
         List of dictionaries with model information
     """
-    models_dir = os.environ.get("MODELS_DIR", "models")
-    if not os.path.exists(models_dir):
-        logger.warning(f"Models directory {models_dir} does not exist.")
-        return []
-    
     models = []
-    for model_dir in Path(models_dir).glob("*"):
-        if model_dir.is_dir():
-            model_info = {
-                "name": model_dir.name,
-                "path": str(model_dir),
-                "size": sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file()) / (1024**3)  # Size in GB
-            }
+    
+    # Check for model directories in the models folder
+    # Try different possible locations for models
+    models_dir = os.environ.get("MODELS_DIR", "models")
+    
+    # Check if it's an absolute path
+    if not os.path.isabs(models_dir):
+        # Try relative to current directory
+        if not os.path.exists(models_dir):
+            # Try relative to project root
+            project_root = os.getcwd()
+            possible_model_paths = [
+                os.path.join(project_root, models_dir),
+                os.path.join(project_root, "src", models_dir),
+                os.path.join(project_root, "workspace", models_dir)
+            ]
             
-            # Check for config file
-            config_file = model_dir / "config.json"
-            if config_file.exists():
-                try:
-                    with open(config_file, 'r') as f:
-                        config = json.load(f)
-                    model_info.update({
-                        "architecture": config.get("architectures", ["Unknown"])[0],
-                        "vocab_size": config.get("vocab_size", "Unknown"),
-                        "hidden_size": config.get("hidden_size", "Unknown")
-                    })
-                except:
-                    pass
+            for path in possible_model_paths:
+                if os.path.exists(path):
+                    models_dir = path
+                    break
+            else:
+                # None of the paths exist, just use the original
+                logger.debug(f"Models directory '{models_dir}' not found in any standard locations")
+    
+    # Now use the directory path, without logging warnings if it doesn't exist
+    if os.path.exists(models_dir):
+        # Check if directory has any model subdirectories
+        model_dirs = list(Path(models_dir).glob("*"))
+        if not model_dirs:
+            logger.debug(f"Models directory {models_dir} exists but is empty.")
+        else:
+            for model_dir in model_dirs:
+                if model_dir.is_dir():
+                    model_info = {
+                        "name": model_dir.name,
+                        "path": str(model_dir),
+                        "source": "directory",
+                        "size": sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file()) / (1024**3)  # Size in GB
+                    }
+                    
+                    # Check for config file
+                    config_file = model_dir / "config.json"
+                    if config_file.exists():
+                        try:
+                            with open(config_file, 'r') as f:
+                                config = json.load(f)
+                            model_info.update({
+                                "architecture": config.get("architectures", ["Unknown"])[0],
+                                "vocab_size": config.get("vocab_size", "Unknown"),
+                                "hidden_size": config.get("hidden_size", "Unknown")
+                            })
+                        except:
+                            pass
+                    
+                    models.append(model_info)
+    
+    # Also check for model configuration files in configs/models
+    config_models_dir = "configs/models"
+    if os.path.exists(config_models_dir):
+        try:
+            import yaml
+        except ImportError:
+            logger.debug("Could not import yaml module. Will not check for model configuration files.")
+            return models
             
-            models.append(model_info)
+        # Check if directory has any YAML files
+        yaml_files = list(Path(config_models_dir).glob("*.yaml"))
+        if not yaml_files:
+            logger.debug(f"Config models directory {config_models_dir} exists but contains no YAML files.")
+        
+        for model_file in yaml_files:
+            try:
+                with open(model_file, 'r') as f:
+                    config = yaml.safe_load(f)
+                
+                model_info = {
+                    "name": os.path.splitext(model_file.name)[0],
+                    "path": str(model_file),
+                    "source": "config",
+                    "config_file": str(model_file)
+                }
+                
+                # Add any metadata from the config file
+                if isinstance(config, dict):
+                    if "model_id" in config:
+                        model_info["model_id"] = config["model_id"]
+                    if "description" in config:
+                        model_info["description"] = config["description"]
+                    if "architecture" in config:
+                        model_info["architecture"] = config["architecture"]
+                
+                models.append(model_info)
+            except Exception as e:
+                logger.debug(f"Error loading model config from {model_file}: {e}")
     
     return models
 
@@ -67,16 +193,18 @@ def list_available_prompts() -> Dict[str, List[str]]:
     """
     try:
         # Import here to avoid dependency issues
-        from src.prompts.prompt_registry import get_prompt_registry
+        from src.prompts.registry import get_prompt_registry
         
         registry = get_prompt_registry()
         prompt_map = {}
         
-        for prompt_name, prompt_info in registry.list_prompts().items():
-            field_type = prompt_info.get("field_type", "general")
-            if field_type not in prompt_map:
-                prompt_map[field_type] = []
-            prompt_map[field_type].append(prompt_name)
+        for prompt_name in registry.list_all():
+            prompt = registry.get(prompt_name)
+            if prompt:
+                field_type = prompt.field_to_extract
+                if field_type not in prompt_map:
+                    prompt_map[field_type] = []
+                prompt_map[field_type].append(prompt_name)
         
         return prompt_map
     except ImportError:
@@ -84,28 +212,59 @@ def list_available_prompts() -> Dict[str, List[str]]:
         return {}
 
 
-def list_available_templates() -> List[Dict[str, Any]]:
+def list_available_templates() -> List[Dict[str, str]]:
     """
-    List all available experiment templates.
+    List available experiment templates with metadata.
     
     Returns:
-        List of dictionaries with template information
+        List of dictionaries with template metadata
     """
     try:
-        # Import here to avoid dependency issues
         from src.config.experiment_config import get_available_templates
         
         templates = []
-        for template_name, template in get_available_templates().items():
+        templates_dict = get_available_templates()
+        
+        # templates_dict is a dictionary with template names as keys and ExperimentTemplate objects as values
+        for template_name, template in templates_dict.items():
             templates.append({
                 "name": template_name,
                 "description": template.description,
-                "type": template.template_type
+                "type": getattr(template, "template_type", "unknown"),
+                "category": getattr(template, "category", "general")
             })
         return templates
-    except ImportError:
-        logger.warning("Could not import experiment templates. Returning empty result.")
+    except Exception as e:
+        logging.warning(f"Error listing templates: {e}")
         return []
+
+
+def load_experiment_template(template_name: str, category: Optional[str] = None) -> Optional[Any]:
+    """
+    Load an experiment template by name.
+    
+    Args:
+        template_name: Name of the template to load
+        category: Optional category to limit the search
+        
+    Returns:
+        ExperimentTemplate object or None if not found
+    """
+    try:
+        from src.config.experiment_config import get_template
+        
+        # Try to get the template
+        template = get_template(template_name, category)
+        
+        if template:
+            logger.info(f"Loaded template: {template.name} ({template.category})")
+        else:
+            logger.warning(f"Template not found: {template_name}")
+            
+        return template
+    except Exception as e:
+        logger.warning(f"Error loading template '{template_name}': {e}")
+        return None
 
 
 def create_basic_experiment(
