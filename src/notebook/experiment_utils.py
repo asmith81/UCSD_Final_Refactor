@@ -198,7 +198,7 @@ def create_prompt_comparison_experiment(
     Args:
         model_name: Name of the model to use
         fields: List of fields to extract
-        prompt_variants: Dictionary mapping variant names to field->prompt mappings
+        prompt_variants: Dictionary mapping field names to prompt variant dictionaries
         batch_size: Batch size for processing
         
     Returns:
@@ -260,16 +260,16 @@ def create_quantization_experiment(
         raise
 
 
-def load_experiment_template(
+def load_from_template(
     template_name: str,
     **kwargs
 ) -> Any:  # Returns ExperimentConfiguration
     """
-    Load a predefined experiment template.
+    Load experiment configuration from a template.
     
     Args:
-        template_name: Name of the template to load
-        **kwargs: Override values for template parameters
+        template_name: Name of the template to use
+        **kwargs: Template-specific parameters
         
     Returns:
         ExperimentConfiguration object
@@ -279,14 +279,10 @@ def load_experiment_template(
         from src.config.experiment_config import get_template
         
         template = get_template(template_name)
-        if template is None:
-            logger.error(f"Template '{template_name}' not found")
-            available_templates = list_available_templates()
-            template_names = [t["name"] for t in available_templates]
-            logger.info(f"Available templates: {', '.join(template_names)}")
+        if not template:
             raise ValueError(f"Template '{template_name}' not found")
         
-        return template.create_configuration(**kwargs)
+        return template.create_config(**kwargs)
     except ImportError as e:
         logger.error(f"Could not import experiment templates: {str(e)}")
         raise

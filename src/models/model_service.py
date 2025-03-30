@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Type, Union, Callable
 
 # Import configuration components
-from src.config.environment import get_environment_config
+from src.config.environment_config import get_environment_config
 from src.config.path_config import get_path_config
 
 # Set up logging

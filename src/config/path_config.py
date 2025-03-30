@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Set
 
 # Import from our configuration system
-from src.config.environment import get_environment_config
+from src.config.environment_config import get_environment_config
 
 # Set up logging
 logger = logging.getLogger(__name__)

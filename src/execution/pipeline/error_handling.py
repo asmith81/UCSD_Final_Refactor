@@ -15,9 +15,9 @@ from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
 # Import project configuration and path utilities
-from src.config.environment import get_environment_config
+from src.config.environment_config import get_environment_config
 from src.config.path_config import get_path_config
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 
 # Import recovery mechanisms
 from .recovery import RecoveryStrategy, RecoveryResult, ErrorRecoveryManager

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 # Import project configuration
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 
 # Configure logging
 logger = logging.getLogger(__name__)

@@ -26,7 +26,7 @@ try:
 except (ImportError, NameError, AttributeError):
     NOTEBOOK_ENV = False
 
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 from src.execution.pipeline.service import ExtractionPipelineService
 from src.execution.pipeline.base import BasePipelineStage, PipelineConfiguration
 from src.execution.pipeline.stages import (

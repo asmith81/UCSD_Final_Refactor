@@ -28,7 +28,7 @@ import pandas as pd
 from .base import BasePipelineStage, PipelineStageError
 
 # Import project modules
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 from src.data.loader import load_and_prepare_data
 from src.models.model_service import get_model_service
 from src.prompts.registry import get_prompt_registry

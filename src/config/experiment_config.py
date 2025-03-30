@@ -20,7 +20,7 @@ from typing import Dict, List, Any, Optional, Union, Callable
 
 # Import project configuration components
 from src.config.base_config import BaseConfig, ConfigurationError
-from src.config.environment import get_environment_config
+from src.config.environment_config import get_environment_config
 from src.config.path_config import get_path_config
 from src.models.model_service import get_model_service
 from src.prompts.registry import get_prompt_registry

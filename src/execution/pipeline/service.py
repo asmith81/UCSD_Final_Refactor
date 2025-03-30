@@ -30,7 +30,7 @@ from .error_handling import ErrorHandler, ProgressTracker
 from .recovery import RecoveryStrategy, RecoveryResult, ErrorRecoveryManager
 
 # Import project configurations
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 from src.models.model_service import get_model_service, optimize_memory
 
 # Configure logging

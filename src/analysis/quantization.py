@@ -25,7 +25,7 @@ import torch
 import matplotlib.pyplot as plt
 
 # Import project components
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 from src.models.model_service import get_model_service, ModelLoadingResult, optimize_memory
 from src.data.loader import load_and_prepare_data
 from src.prompts.registry import get_prompt_registry

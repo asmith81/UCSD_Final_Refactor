@@ -24,7 +24,7 @@ if module_path not in sys.path:
 
 # Import project components
 from src.analysis.quantization import get_quantization_analyzer
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 
 # Configure logging
 logging.basicConfig(

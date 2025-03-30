@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from src.config.experiment import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration
 from src.config.path_config import get_path_config
 
 

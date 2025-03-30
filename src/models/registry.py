@@ -15,7 +15,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 
 # Import project utilities
-from src.config.environment import get_environment_config
+from src.config.environment_config import get_environment_config
 from src.config.path_config import get_path_config
 
 # Set up logging
