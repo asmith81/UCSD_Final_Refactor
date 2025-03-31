@@ -26,7 +26,7 @@ try:
 except (ImportError, NameError, AttributeError):
     NOTEBOOK_ENV = False
 
-from src.config.experiment_config import ExperimentConfiguration
+from src.config.experiment_config import ExperimentConfiguration, ExperimentType
 from src.execution.pipeline.service import ExtractionPipelineService
 from src.execution.pipeline.base import BasePipelineStage, PipelineConfiguration
 from src.execution.pipeline.stages import (
@@ -93,6 +93,34 @@ class PipelineFactory:
         # Convert dict to ExperimentConfiguration if needed
         if isinstance(config, dict):
             config = ExperimentConfiguration.from_dict(config)
+        
+        # Handle custom experiment type
+        if config.type == ExperimentType.CUSTOM:
+            # Create a pipeline with all stages
+            stages = [
+                DataPreparationStage(),
+                ModelLoadingStage(),
+                PromptManagementStage(),
+                ExtractionStage(),
+                ResultsCollectionStage(),
+                ExportStage()
+            ]
+            
+            # Add optional stages based on custom parameters
+            if getattr(config, "include_analysis", True):
+                stages.append(AnalysisStage())
+                
+            if getattr(config, "include_validation", True):
+                stages.append(ValidationStage())
+                
+            if getattr(config, "include_visualization", True):
+                stages.append(VisualizationStage())
+                
+            if getattr(config, "monitor_resources", False):
+                stages.append(ResourceMonitoringStage())
+            
+            # Create and return pipeline
+            return cls._create_pipeline_with_stages(config, stages)
         
         # Create pipeline stages
         pipeline_stages = cls._create_pipeline_stages(config, stages)

@@ -673,6 +673,47 @@ def get_default_fields() -> Dict[str, str]:
     }
 
 
+def create_custom_experiment(
+    model_name: str,
+    fields: List[str],
+    **custom_params
+) -> Any:  # Returns ExperimentConfiguration
+    """
+    Create a fully customizable experiment configuration.
+    
+    Args:
+        model_name: Name of the model to use
+        fields: List of fields to extract
+        **custom_params: Any additional custom parameters
+        
+    Returns:
+        ExperimentConfiguration object
+    """
+    try:
+        # Import here to avoid dependency issues
+        from src.config.experiment_config import (
+            create_experiment_config,
+            ExperimentType
+        )
+        
+        # Start with required parameters
+        experiment_params = {
+            "model_name": model_name,
+            "fields_to_extract": fields,
+        }
+        
+        # Add all custom parameters
+        experiment_params.update(custom_params)
+        
+        return create_experiment_config(
+            experiment_type=ExperimentType.CUSTOM,
+            **experiment_params
+        )
+    except ImportError as e:
+        logger.error(f"Could not import experiment configuration: {str(e)}")
+        raise
+
+
 if __name__ == "__main__":
     # If executed as a script, print available models and templates
     print("Available Models:")

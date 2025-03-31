@@ -48,6 +48,9 @@ class ExperimentType:
     QUANTIZATION_COMPARISON = "quantization_comparison"
     FULL_GRID = "full_grid"
     
+    # Add new custom type
+    CUSTOM = "custom"  # Fully customizable experiment type
+    
     # Advanced experiment types
     PROMPT_MODEL_GRID = "prompt_model_grid"
     QUANTIZATION_PROMPT_GRID = "quantization_prompt_grid"
@@ -141,7 +144,19 @@ class ExperimentConfiguration(BaseConfig):
         if self.type not in ExperimentType.get_all_types():
             errors.append(f"Invalid experiment type: {self.type}")
         
-        # Validate model
+        # For CUSTOM type, we only validate critical parameters
+        if self.type == ExperimentType.CUSTOM:
+            # Basic validation for custom experiments - ensure critical parameters exist
+            if not self.fields_to_extract:
+                errors.append("At least one field must be specified for extraction")
+            
+            if not self.model_name:
+                errors.append("Model name must be specified even for custom experiments")
+            
+            # Skip other validations for custom type
+            return errors
+        
+        # Regular validation logic for other experiment types
         model_service = get_model_service()
         if self.model_name not in model_service.list_available_models():
             errors.append(f"Model not found in registry: {self.model_name}")
@@ -160,10 +175,6 @@ class ExperimentConfiguration(BaseConfig):
             for strategy in self.quantization_strategies:
                 if strategy not in available_strategies:
                     errors.append(f"Invalid quantization strategy for {self.model_name}: {strategy}")
-        
-        # Validate fields to extract
-        if not self.fields_to_extract:
-            errors.append("At least one field must be specified for extraction")
         
         return errors
     
@@ -764,6 +775,35 @@ def get_builtin_templates(
         result.update(notebook_templates)
         result.update(visualization_templates)
     
+    # Add custom template
+    result["custom_experiment"] = ExperimentTemplate(
+        name="custom_experiment",
+        config={
+            "name": "custom_extraction",
+            "type": ExperimentType.CUSTOM,
+            "fields_to_extract": ["invoice_number", "date", "total_amount"],
+            "model_name": "pixtral-12b",
+            "dataset": {
+                "limit": 10,
+                "shuffle": True
+            },
+            "notebook": {
+                "interactive": True,
+                "display_progress": True
+            },
+            # Example of custom parameters
+            "custom_parameters": {
+                "advanced_parsing": True,
+                "confidence_threshold": 0.8,
+                "retry_failed": True,
+                "max_retries": 3
+            }
+        },
+        category="custom",
+        description="Fully customizable experiment template with examples of custom parameters",
+        tags=["custom", "flexible", "advanced"]
+    )
+    
     return result
 
 
@@ -1137,6 +1177,35 @@ def _create_builtin_templates() -> None:
             category="visualization",
             description="Comprehensive experiment visualization dashboard",
             tags=["notebook", "visualization", "dashboard"]
+        ),
+        
+        # Add custom template
+        ExperimentTemplate(
+            name="custom_experiment",
+            config={
+                "name": "custom_extraction",
+                "type": ExperimentType.CUSTOM,
+                "fields_to_extract": ["invoice_number", "date", "total_amount"],
+                "model_name": "pixtral-12b",
+                "dataset": {
+                    "limit": 10,
+                    "shuffle": True
+                },
+                "notebook": {
+                    "interactive": True,
+                    "display_progress": True
+                },
+                # Example of custom parameters
+                "custom_parameters": {
+                    "advanced_parsing": True,
+                    "confidence_threshold": 0.8,
+                    "retry_failed": True,
+                    "max_retries": 3
+                }
+            },
+            category="custom",
+            description="Fully customizable experiment template with examples of custom parameters",
+            tags=["custom", "flexible", "advanced"]
         )
     ]
     
