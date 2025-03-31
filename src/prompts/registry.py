@@ -271,7 +271,6 @@ _registry = PromptRegistry()
 # Public API functions
 def get_registry() -> PromptRegistry:
     """Get the global prompt registry instance."""
-    global _registry
     return _registry
 
 def get_prompt_registry() -> PromptRegistry:

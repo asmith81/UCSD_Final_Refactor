@@ -29,15 +29,19 @@ except ImportError:
         """
         import platform
         import sys
+        import os
         
+        # Basic system information
         info = {
             "platform": platform.platform(),
             "python_version": platform.python_version(),
-            "python_implementation": platform.python_implementation(),
             "python_path": sys.executable,
             "processor": platform.processor(),
             "packages": {},
-            "in_runpod": os.path.exists("/workspace") and os.path.exists("/cache")
+            "env_vars": {},
+            "disk_space": {"total_gb": 0, "free_gb": 0, "used_gb": 0},
+            "in_runpod": os.path.exists("/workspace") and os.path.exists("/cache"),
+            "python_implementation": platform.python_implementation() if hasattr(platform, "python_implementation") else "Unknown"
         }
         
         # Get package versions
@@ -55,7 +59,7 @@ except ImportError:
                     info["packages"][package] = "not installed"
         except:
             pass
-            
+        
         # Check GPU availability
         info["gpu"] = {"available": False}
         try:
@@ -67,6 +71,23 @@ except ImportError:
                     "count": torch.cuda.device_count(),
                     "cuda_version": torch.version.cuda,
                 }
+        except:
+            pass
+        
+        # Get environment variables that might be useful
+        for env_var in ["CUDA_VISIBLE_DEVICES", "RUNPOD_POD_ID", "GPU_NAME"]:
+            if env_var in os.environ:
+                info["env_vars"][env_var] = os.environ[env_var]
+        
+        # Get disk space information
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage("/")
+            info["disk_space"] = {
+                "total_gb": total / (1024**3),
+                "used_gb": used / (1024**3),
+                "free_gb": free / (1024**3)
+            }
         except:
             pass
             
@@ -193,9 +214,9 @@ def list_available_prompts() -> Dict[str, List[str]]:
     """
     try:
         # Import here to avoid dependency issues
-        from src.prompts.registry import get_prompt_registry
+        from src.prompts.registry import get_registry
         
-        registry = get_prompt_registry()
+        registry = get_registry()
         prompt_map = {}
         
         for prompt_name in registry.list_all():
@@ -207,8 +228,8 @@ def list_available_prompts() -> Dict[str, List[str]]:
                 prompt_map[field_type].append(prompt_name)
         
         return prompt_map
-    except ImportError:
-        logger.warning("Could not import prompt registry. Returning empty result.")
+    except ImportError as e:
+        logger.warning(f"Could not import prompt registry: {e}")
         return {}
 
 

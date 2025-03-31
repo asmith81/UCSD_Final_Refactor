@@ -70,26 +70,37 @@ class EnvironmentConfig:
     
     def _detect_project_root(self) -> Path:
         """Detect project root directly without depending on path_config."""
-        # Check for RunPod environment
-        if self._is_runpod_env():
-            return Path("/workspace")
-            
-        # Check environment variable
-        if "PROJECT_ROOT" in os.environ:
-            root = Path(os.environ["PROJECT_ROOT"])
-            if root.exists():
-                return root
+        try:
+            # Check for RunPod environment
+            if self._is_runpod_env():
+                logger.info("RunPod environment detected, using /workspace as project root")
+                return Path("/workspace")
                 
-        # Start with this file's location
-        current_file = Path(__file__).resolve()
-        current_dir = current_file.parent  # /src/config
-        
-        # Try to go up to find project root
-        if current_dir.name == "config" and current_dir.parent.name == "src":
-            return current_dir.parent.parent  # Go up from /src/config to project root
+            # Check environment variable
+            if "PROJECT_ROOT" in os.environ:
+                root = Path(os.environ["PROJECT_ROOT"])
+                if root.exists():
+                    logger.info(f"Using PROJECT_ROOT environment variable: {root}")
+                    return root
+                    
+            # Start with this file's location
+            current_file = Path(__file__).resolve()
+            current_dir = current_file.parent  # /src/config
             
-        # Fall back to current working directory
-        return Path(os.getcwd())
+            # Try to go up to find project root
+            if current_dir.name == "config" and current_dir.parent.name == "src":
+                project_root = current_dir.parent.parent  # Go up from /src/config to project root
+                logger.info(f"Using detected project root from file location: {project_root}")
+                return project_root
+                
+            # Fall back to current working directory
+            cwd = Path(os.getcwd())
+            logger.info(f"Could not determine project root, using current working directory: {cwd}")
+            return cwd
+        except Exception as e:
+            logger.warning(f"Error detecting project root: {e}")
+            logger.warning("Could not determine project root, using fallback: /workspace")
+            return Path("/workspace")
     
     def _create_default_paths(self, project_root: Path) -> Dict[str, str]:
         """Create default paths dictionary based on project root."""
@@ -215,6 +226,21 @@ class EnvironmentConfig:
         except Exception as e:
             logger.warning(f"Error saving config to {filepath}: {e}")
             return False
+
+    def get_path(self, key: str, default: Any = None) -> Any:
+        """
+        Get a path value by key for API compatibility with PathConfig.
+        
+        Args:
+            key: Path key to get value for
+            default: Default value if key not found
+            
+        Returns:
+            Path value or default if not found
+        """
+        if key in self.paths:
+            return self.paths[key]
+        return default
 
 # Global instance
 _env_config = None

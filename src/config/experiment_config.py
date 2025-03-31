@@ -25,7 +25,7 @@ from src.config.base_config import BaseConfig, ConfigurationError
 from src.config.environment_config import get_environment_config
 from src.config.path_config import get_path_config
 from src.models.model_service import get_model_service
-from src.prompts.registry import get_prompt_registry
+from src.prompts.registry import get_registry
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ class ExperimentConfiguration(BaseConfig):
             errors.append(f"Model not found in registry: {self.model_name}")
         
         # Validate prompt configuration
-        prompt_registry = get_prompt_registry()
+        prompt_registry = get_registry()
         if self.prompt_names:
             for prompt_name in self.prompt_names:
                 if prompt_registry.get(prompt_name) is None:
@@ -1008,28 +1008,91 @@ def get_experiment_config(
     )
 
 
+# Add this function at the module level, before _create_builtin_templates
+def _detect_project_root() -> Path:
+    """
+    Detect project root directory.
+    
+    Returns:
+        Path to the project root
+    """
+    # Check environment variable first
+    if "PROJECT_ROOT" in os.environ:
+        root = Path(os.environ["PROJECT_ROOT"])
+        if root.exists():
+            return root
+        
+    # Check for RunPod environment
+    if os.path.exists("/workspace") and os.path.exists("/runpod"):
+        return Path("/workspace")
+        
+    # Start with this file's location
+    current_file = Path(__file__).resolve()
+    current_dir = current_file.parent  # /src/config
+    
+    # Try to go up to find project root from src/config
+    if current_dir.name == "config" and current_dir.parent.name == "src":
+        return current_dir.parent.parent
+        
+    # Fall back to current working directory
+    return Path(os.getcwd())
+
+
 # Create built-in templates
 def _create_builtin_templates() -> None:
     """Create built-in experiment templates."""
-    path_config = get_path_config()
+    try:
+        path_config = get_path_config()
+    except Exception as e:
+        logger.warning(f"Could not get path config: {e}, using fallbacks")
+        path_config = None
     
     # Try multiple approaches to determine the template directory
     template_dir = None
     
     # Approach 1: Use package_dir from path_config
-    package_dir = path_config.get_path('package_dir')
-    if package_dir is not None:
-        template_dir = os.path.join(package_dir, 'config', 'templates')
-        logger.info(f"Using package directory for templates: {template_dir}")
+    if path_config is not None:
+        try:
+            # Try get_path method first
+            if hasattr(path_config, 'get_path'):
+                package_dir = path_config.get_path('package_dir')
+            # Fall back to get method
+            elif hasattr(path_config, 'get'):
+                package_dir = path_config.get('package_dir')
+            # If paths attribute exists, try accessing directly
+            elif hasattr(path_config, 'paths'):
+                package_dir = path_config.paths.get('package_dir')
+            else:
+                package_dir = None
+                
+            if package_dir is not None:
+                template_dir = os.path.join(package_dir, 'config', 'templates')
+                logger.info(f"Using package directory for templates: {template_dir}")
+        except Exception as e:
+            logger.warning(f"Error accessing package_dir: {e}")
     
     # Approach 2: Try using src directory from project_root
     if template_dir is None or not os.path.exists(os.path.dirname(template_dir)):
-        project_root = path_config.get('project_root')
-        if project_root and os.path.exists(project_root):
-            src_dir = os.path.join(project_root, 'src')
-            if os.path.exists(src_dir):
-                template_dir = os.path.join(src_dir, 'config', 'templates')
-                logger.info(f"Using project root src directory for templates: {template_dir}")
+        project_root = None
+        
+        # Try different ways to get project_root
+        if path_config is not None:
+            try:
+                if hasattr(path_config, 'get'):
+                    project_root = path_config.get('project_root')
+                elif hasattr(path_config, 'paths'):
+                    project_root = path_config.paths.get('project_root')
+            except Exception:
+                pass
+        
+        # Fallback to current working directory
+        if not project_root:
+            project_root = os.getcwd()
+            
+        src_dir = os.path.join(project_root, 'src')
+        if os.path.exists(src_dir):
+            template_dir = os.path.join(src_dir, 'config', 'templates')
+            logger.info(f"Using project root src directory for templates: {template_dir}")
     
     # Approach 3: Try common environment paths
     if template_dir is None or not os.path.exists(os.path.dirname(template_dir)):
@@ -1070,7 +1133,8 @@ def _create_builtin_templates() -> None:
             },
             category="notebook",
             description="Simple notebook template for single model extraction",
-            tags=["notebook", "basic", "beginner"]
+            tags=["notebook", "basic", "beginner"],
+            template_type="notebook"
         ),
         ExperimentTemplate(
             name="notebook_model_comparison",
@@ -1096,116 +1160,8 @@ def _create_builtin_templates() -> None:
             },
             category="notebook",
             description="Compare different models on the same task",
-            tags=["notebook", "comparison", "intermediate"]
-        ),
-        ExperimentTemplate(
-            name="notebook_prompt_comparison",
-            config={
-                "name": "prompt_comparison",
-                "type": ExperimentType.NOTEBOOK_COMPARISON,
-                "fields_to_extract": ["invoice_number", "date"],
-                "model_name": "pixtral-12b",
-                "prompt_comparison": {
-                    "prompts": ["default_extraction", "detailed_extraction", "concise_extraction"],
-                    "metrics": ["exact_match", "character_error_rate"]
-                },
-                "dataset": {
-                    "limit": 15,
-                    "shuffle": True
-                },
-                "notebook": {
-                    "interactive": True,
-                    "display_progress": True,
-                    "visualization_inline": True
-                }
-            },
-            category="notebook",
-            description="Compare different prompts on the same model",
-            tags=["notebook", "comparison", "prompts", "intermediate"]
-        ),
-        
-        # Advanced notebook templates
-        ExperimentTemplate(
-            name="notebook_quantization_analysis",
-            config={
-                "name": "quantization_analysis",
-                "type": ExperimentType.NOTEBOOK_COMPARISON,
-                "fields_to_extract": ["invoice_number"],
-                "model_name": "pixtral-12b",
-                "quantization_strategies": ["none", "int8", "int4", "gptq-int4"],
-                "dataset": {
-                    "limit": 20,
-                    "shuffle": True
-                },
-                "notebook": {
-                    "interactive": True,
-                    "display_progress": True,
-                    "memory_tracking": True,
-                    "visualization_inline": True
-                }
-            },
-            category="notebook",
-            description="Compare quantization strategies for a model",
-            tags=["notebook", "advanced", "quantization"]
-        ),
-        
-        # Visualization templates
-        ExperimentTemplate(
-            name="notebook_visualization_dashboard",
-            config={
-                "name": "visualization_dashboard",
-                "type": ExperimentType.NOTEBOOK_VISUALIZATION,
-                "visualization": {
-                    "generate": True,
-                    "types": [
-                        "accuracy_bar", 
-                        "error_distribution", 
-                        "confusion_matrix",
-                        "timeline",
-                        "memory_usage",
-                        "comparative_radar"
-                    ],
-                    "interactive": True,
-                    "export_formats": ["html", "png"]
-                },
-                "notebook": {
-                    "interactive": True,
-                    "display_progress": False,
-                    "visualization_inline": True
-                }
-            },
-            category="visualization",
-            description="Comprehensive experiment visualization dashboard",
-            tags=["notebook", "visualization", "dashboard"]
-        ),
-        
-        # Add custom template
-        ExperimentTemplate(
-            name="custom_experiment",
-            config={
-                "name": "custom_extraction",
-                "type": ExperimentType.CUSTOM,
-                "fields_to_extract": ["invoice_number", "date", "total_amount"],
-                "model_name": "pixtral-12b",
-                "dataset": {
-                    "limit": 10,
-                    "shuffle": True
-                },
-                "notebook": {
-                    "interactive": True,
-                    "display_progress": True
-                },
-                # Example of custom parameters
-                "custom_parameters": {
-                    "advanced_parsing": True,
-                    "confidence_threshold": 0.8,
-                    "retry_failed": True,
-                    "max_retries": 3
-                }
-            },
-            category="custom",
-            description="Fully customizable experiment template with examples of custom parameters",
-            tags=["custom", "flexible", "advanced"]
+            tags=["notebook", "comparison", "intermediate"],
+            template_type="notebook"
         )
     ]
     
