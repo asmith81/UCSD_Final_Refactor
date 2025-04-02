@@ -32,6 +32,7 @@ warnings.filterwarnings("ignore", message="torch._C._jit_set_profiling_executor"
 try:
     # Updated imports to reflect new architecture
     from src.config.path_config import get_path_config, get_paths
+    from src.config.path_utils import detect_project_root, get_workspace_root
     
     # Try to import environment_config but handle failure gracefully
     try:
@@ -152,19 +153,16 @@ def check_gpu_availability() -> Dict[str, Any]:
     Returns:
         Dictionary with GPU information
     """
-    if CONFIG_SYSTEM_AVAILABLE:
+    if CONFIG_SYSTEM_AVAILABLE and ENV_CONFIG_AVAILABLE:
         try:
             # Try to use the environment configuration
             logger.info("Using environment configuration for GPU check")
             env_config = get_environment_config()
             
             # Get GPU info from environment config
-            # Use direct attributes instead of hardware_info
-            gpu_available = env_config._is_cuda_available()
-            
             gpu_info = {
-                "available": gpu_available,
-                "name": "Unknown" if not gpu_available else "NVIDIA GPU",
+                "available": env_config._is_cuda_available(),
+                "name": "Unknown",
                 "memory_total": 0,
                 "memory_total_gb": 0,
                 "memory_free": 0,
@@ -175,7 +173,7 @@ def check_gpu_availability() -> Dict[str, Any]:
             }
             
             # Try to get more detailed info if GPU is available
-            if gpu_available:
+            if gpu_info["available"]:
                 try:
                     import torch
                     if torch.cuda.is_available():
@@ -198,7 +196,7 @@ def check_gpu_availability() -> Dict[str, Any]:
                 logger.info(f"Free Memory: {gpu_info['memory_free_gb']:.2f} GB")
             
             return gpu_info
-        
+            
         except Exception as e:
             logger.warning(f"Error using environment configuration for GPU check: {e}")
             logger.warning("Falling back to standalone implementation")

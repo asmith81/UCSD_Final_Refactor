@@ -19,6 +19,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Set
 import sys
 
+# Import path utilities
+from src.config.path_utils import detect_project_root, get_workspace_root, ensure_directory
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -48,8 +51,8 @@ class PathConfig:
             create_dirs: Whether to create directories if they don't exist
             custom_paths: Optional dictionary of custom path overrides
         """
-        # Detect project root
-        self.project_root = self._detect_project_root()
+        # Detect project root using the new utility
+        self.project_root = detect_project_root()
         logger.info(f"Using project root: {self.project_root}")
         
         # Make project root accessible to other modules
@@ -86,44 +89,6 @@ class PathConfig:
         if create_dirs:
             self._create_directories()
     
-    def _detect_project_root(self) -> Path:
-        """
-        Simple and reliable project root detection.
-        
-        Returns:
-            Path object representing the project root
-        """
-        # Check for RunPod environment (explicit case)
-        if self._is_runpod_env():
-            return Path("/workspace")
-        
-        # Check environment variable (if set by user)
-        if "PROJECT_ROOT" in os.environ:
-            root = Path(os.environ["PROJECT_ROOT"])
-            if root.exists():
-                return root
-        
-        # Start with this file's location and search upward
-        current_file = Path(__file__).resolve()
-        search_dir = current_file.parent.parent.parent  # Start 3 levels up from config file
-        
-        # Look for common project markers
-        markers = [".git", "setup.py", "requirements.txt", "README.md"]
-        for marker in markers:
-            if (search_dir / marker).exists():
-                return search_dir
-        
-        # Fall back to current working directory
-        return Path(os.getcwd())
-    
-    def _is_runpod_env(self) -> bool:
-        """Check if running in RunPod environment."""
-        if any(var in os.environ for var in ["RUNPOD_POD_ID", "RUNPOD_API_KEY"]):
-            return True
-        if Path("/workspace").exists() and Path("/runpod").exists():
-            return True
-        return False
-    
     def _add_subdirectories(self) -> None:
         """Add common subdirectories to the paths dictionary."""
         # Data subdirectories
@@ -159,12 +124,7 @@ class PathConfig:
         """Create directories if they don't exist."""
         for path_name, path_str in self.paths.items():
             if path_name.endswith('_dir'):  # Only create directories
-                path = Path(path_str)
-                if not path.exists():
-                    try:
-                        path.mkdir(parents=True, exist_ok=True)
-                    except Exception as e:
-                        logger.warning(f"Could not create directory {path}: {e}")
+                ensure_directory(path_str)
     
     def get(self, path_name: str, default: Optional[str] = None) -> Optional[str]:
         """Get a path by name with default fallback."""

@@ -29,47 +29,107 @@ project_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Import our utility modules
-try:
-    from src.notebook.setup_utils import get_system_info, check_gpu_availability
-    from src.notebook.experiment_utils import (
-        list_available_models, 
-        list_available_prompts,
-        list_available_templates,
-        create_basic_experiment,
-        create_model_comparison_experiment,
-        create_prompt_comparison_experiment,
-        create_quantization_experiment,
-        load_experiment_template,
-        run_extraction_experiment,
-        get_default_fields,
-        visualize_experiment_results
-    )
-    from src.notebook.error_utils import display_error, NotebookFriendlyError
-    utils_available = True
-except ImportError as e:
-    print(f"⚠️ Error importing utilities: {str(e)}")
-    print("⚠️ Make sure you've run the environment setup notebook first.")
-    utils_available = False
+# %% [markdown]
+# ## 1. Path Configuration
+#
+# Set up and validate the paths for data, models, results, and logs.
 
-# Check GPU availability
-try:
-    import torch
-    gpu_available = torch.cuda.is_available()
-    if gpu_available:
-        device_name = torch.cuda.get_device_name(0)
-        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-        print(f"✅ GPU detected: {device_name} with {gpu_memory:.2f} GB memory")
+# %%
+# Detect project root
+current_dir = Path.cwd()
+
+# Search for project root by looking for standard directories
+project_root = current_dir
+while project_root != project_root.parent and not all(
+    (project_root / d).exists() for d in ["src", "data", "models"]
+):
+    project_root = project_root.parent
+
+if project_root == project_root.parent:
+    # If we reached the file system root without finding our markers
+    # Use the current directory as project root
+    project_root = current_dir
+    logger.warning("Could not detect project root. Using current directory.")
+else:
+    logger.info(f"Found project root: {project_root}")
+
+# Define key paths
+paths = {
+    "project_root": project_root,
+    "data_dir": project_root / "data",
+    "models_dir": project_root / "models",
+    "results_dir": project_root / "results",
+    "logs_dir": project_root / "logs",
+    "config_dir": project_root / "configs",
+    "src_dir": project_root / "src",
+    "configs_dir": project_root / "configs",
+    "cache_dir": project_root / "models" / "cache",
+    "notebooks_dir": project_root / "notebooks",
+    "tests_dir": project_root / "tests",
+    "package_dir": project_root / "src" / "invoice_extraction",
+    "images_dir": project_root / "data" / "images",
+    "ground_truth_path": project_root / "data" / "ground_truth.json"
+}
+
+# Create timestamp-based directories for this experiment
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+experiment_dir = paths["results_dir"] / f"experiment_{timestamp}"
+experiment_raw_dir = experiment_dir / "raw"
+experiment_processed_dir = experiment_dir / "processed"
+experiment_logs_dir = experiment_dir / "logs"
+
+# Add experiment-specific paths
+paths.update({
+    "experiment_dir": experiment_dir,
+    "experiment_raw_dir": experiment_raw_dir,
+    "experiment_processed_dir": experiment_processed_dir,
+    "experiment_logs_dir": experiment_logs_dir,
+    "experiment_config_path": experiment_dir / "config.json",
+    "experiment_results_path": experiment_dir / "results.json",
+    "experiment_metrics_path": experiment_dir / "metrics.json",
+    "experiment_log_path": experiment_logs_dir / "experiment.log"
+})
+
+# Create all directories
+for key, path in paths.items():
+    if isinstance(path, Path):
+        path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created/verified directory: {key} = {path}")
+
+# Set environment variables for paths
+for key, path in paths.items():
+    if isinstance(path, Path):
+        env_var = key.upper()
+        os.environ[env_var] = str(path)
+        logger.info(f"Set environment variable {env_var}={path}")
+
+# Check if data directory has any invoice images
+data_path = paths["data_dir"]
+image_files = list(data_path.glob("**/*.png")) + list(data_path.glob("**/*.jpg")) + list(data_path.glob("**/*.jpeg"))
+
+if image_files:
+    logger.info(f"Found {len(image_files)} image files in data directory")
+    if len(image_files) > 5:
+        logger.info(f"Sample files: {', '.join([f.name for f in image_files[:5]])}")
     else:
-        print("ℹ️ No GPU detected - will use CPU for extraction (slower)")
-        gpu_memory = 0
-except ImportError:
-    print("⚠️ PyTorch not installed - cannot check GPU availability")
-    gpu_available = False
-    gpu_memory = 0
+        logger.info(f"Files: {', '.join([f.name for f in image_files])}")
+else:
+    logger.warning("No image files found in data directory. Will need to add data before extraction.")
+
+# Check for model files
+models_path = paths["models_dir"]
+model_dirs = [d for d in models_path.glob("*") if d.is_dir()]
+
+if model_dirs:
+    logger.info(f"Found {len(model_dirs)} potential model directories")
+    for model_dir in model_dirs:
+        num_files = len(list(model_dir.glob("*")))
+        logger.info(f"{model_dir.name}: {num_files} files")
+else:
+    logger.warning("No model directories found. Models will be downloaded on first use.")
 
 # %% [markdown]
-# ## 1. Select Experiment Type
+# ## 2. Select Experiment Type
 # 
 # Choose from available templates or create a custom experiment.
 
@@ -123,7 +183,7 @@ else:
     print("Utilities not available, cannot list templates or experiment types.")
 
 # %% [markdown]
-# ## 2. Configure Variables
+# ## 3. Configure Variables
 # 
 # Set up the experiment parameters.
 
@@ -498,7 +558,7 @@ else:
     print("Utilities not available, cannot display configuration options.")
 
 # %% [markdown]
-# ## 3. Create and Run the Experiment
+# ## 4. Create and Run the Experiment
 
 # %%
 if utils_available:
@@ -762,7 +822,7 @@ else:
     print("Utilities not available, cannot create or run experiments.")
 
 # %% [markdown]
-# ## 4. View Results
+# ## 5. View Results
 # 
 # Explore the experiment results.
 
@@ -871,7 +931,7 @@ else:
     print("No experiment results available. Run an experiment first.")
 
 # %% [markdown]
-# ## 5. Next Steps
+# ## 6. Next Steps
 # 
 # - Run different experiment types to compare models, prompts, or quantization strategies
 # - Load previous experiment results for detailed analysis

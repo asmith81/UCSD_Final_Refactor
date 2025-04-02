@@ -25,6 +25,9 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Type, TypeVar, Generic, Set
 
+# Import path utilities
+from src.config.path_utils import detect_project_root, get_workspace_root
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -540,7 +543,7 @@ class ConfigurationManager:
             config_overrides: Dictionary of configuration overrides
         """
         # Set up basic properties
-        self.project_root = self._find_project_root() if project_root is None else Path(project_root)
+        self.project_root = Path(project_root) if project_root else detect_project_root()
         self.config_dir = Path(config_dir) if config_dir else self.project_root / "configs"
         
         # Detect or override environment
@@ -573,85 +576,6 @@ class ConfigurationManager:
         # Initialize field and model registries
         self._init_extraction_fields()
         self._init_model_configs()
-    
-    def _find_project_root(self) -> Path:
-        """
-        Find the project root directory.
-        
-        This method looks for standard project markers like .git, setup.py, or README.md
-        to identify the project root directory.
-        
-        Returns:
-            Path to the project root directory
-        
-        Raises:
-            ConfigurationError: If project root cannot be determined
-        """
-        # Start with the current file's directory
-        current_dir = Path(__file__).resolve().parent
-        
-        # Check if PROJECT_ROOT environment variable is set
-        if "PROJECT_ROOT" in os.environ:
-            project_root = Path(os.environ["PROJECT_ROOT"])
-            if project_root.exists():
-                logger.info(f"Using PROJECT_ROOT environment variable: {project_root}")
-                return project_root
-        
-        # Check for RunPod environment
-        if self._is_runpod():
-            # In RunPod, the standard location is /workspace
-            if Path("/workspace").exists():
-                logger.info("RunPod environment detected, using /workspace as project root")
-                # Set the PROJECT_ROOT environment variable for future use
-                os.environ["PROJECT_ROOT"] = "/workspace"
-                return Path("/workspace")
-        
-        # Look for common project markers
-        markers = [".git", "setup.py", "requirements.txt", "README.md"]
-        
-        # Walk up the directory tree looking for markers
-        search_dir = current_dir
-        while search_dir != search_dir.parent:  # Stop at the filesystem root
-            for marker in markers:
-                if (search_dir / marker).exists():
-                    logger.info(f"Project root marker '{marker}' found at: {search_dir}")
-                    return search_dir
-            search_dir = search_dir.parent
-        
-        # If we get here, we couldn't find the project root
-        # Fallback to two directories up from this file
-        fallback = current_dir.parent.parent
-        logger.warning(f"Could not determine project root, using fallback: {fallback}")
-        return fallback
-    
-    def _is_runpod(self) -> bool:
-        """
-        Check if the code is running in a RunPod environment.
-        
-        Returns:
-            True if running in RunPod, False otherwise
-        """
-        # Check for RunPod-specific environment variables
-        runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
-        if any(indicator in os.environ for indicator in runpod_indicators):
-            return True
-        
-        # Check for RunPod-specific directories
-        runpod_paths = ["/cache", "/workspace"]
-        if all(os.path.exists(path) for path in runpod_paths):
-            return True
-        
-        # Check Docker cgroup (common in container environments)
-        try:
-            with open('/proc/1/cgroup', 'r') as f:
-                if 'docker' in f.read():
-                    # This is likely a container, possible RunPod
-                    return True
-        except (FileNotFoundError, IOError):
-            # Not on Linux or not in a container
-            pass
-        
-        return False
     
     def _detect_environment(self) -> EnvironmentType:
         """
@@ -693,6 +617,35 @@ class ConfigurationManager:
         else:
             logger.info("💻 Running in local environment")
         return EnvironmentType.LOCAL
+    
+    def _is_runpod(self) -> bool:
+        """
+        Check if the code is running in a RunPod environment.
+        
+        Returns:
+            True if running in RunPod, False otherwise
+        """
+        # Check for RunPod-specific environment variables
+        runpod_indicators = ["RUNPOD_POD_ID", "RUNPOD_GPU_COUNT"]
+        if any(indicator in os.environ for indicator in runpod_indicators):
+            return True
+        
+        # Check for RunPod-specific directories
+        runpod_paths = ["/cache", "/workspace"]
+        if all(os.path.exists(path) for path in runpod_paths):
+            return True
+        
+        # Check Docker cgroup (common in container environments)
+        try:
+            with open('/proc/1/cgroup', 'r') as f:
+                if 'docker' in f.read():
+                    # This is likely a container, possible RunPod
+                    return True
+        except (FileNotFoundError, IOError):
+            # Not on Linux or not in a container
+            pass
+        
+        return False
     
     def _load_default_config(self) -> None:
         """

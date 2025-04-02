@@ -94,8 +94,13 @@ except ImportError:
         return info
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Force reconfiguration of the root logger
+)
 logger = logging.getLogger("experiment_utils")
+logger.setLevel(logging.INFO)  # Ensure this logger is set to INFO level
 
 
 def list_available_models() -> List[Dict[str, Any]]:
@@ -107,101 +112,125 @@ def list_available_models() -> List[Dict[str, Any]]:
     """
     models = []
     
-    # Check for model directories in the models folder
-    # Try different possible locations for models
-    models_dir = os.environ.get("MODELS_DIR", "models")
+    # Utility directories to ignore
+    IGNORED_DIRS = {'.ipynb_checkpoints', 'cache', 'logs', 'old_notebooks'}
     
-    # Check if it's an absolute path
-    if not os.path.isabs(models_dir):
-        # Try relative to current directory
-        if not os.path.exists(models_dir):
-            # Try relative to project root
-            project_root = os.getcwd()
-            possible_model_paths = [
-                os.path.join(project_root, models_dir),
-                os.path.join(project_root, "src", models_dir),
-                os.path.join(project_root, "workspace", models_dir)
-            ]
-            
-            for path in possible_model_paths:
-                if os.path.exists(path):
-                    models_dir = path
-                    break
-            else:
-                # None of the paths exist, just use the original
-                logger.debug(f"Models directory '{models_dir}' not found in any standard locations")
+    # Use environment variables set up in 01_environment_setup.py
+    config_models_dir = Path(os.environ.get("CONFIG_DIR", "configs")) / "models"
+    models_dir = Path(os.environ.get("MODELS_DIR", "models"))
     
-    # Now use the directory path, without logging warnings if it doesn't exist
-    if os.path.exists(models_dir):
-        # Check if directory has any model subdirectories
-        model_dirs = list(Path(models_dir).glob("*"))
-        if not model_dirs:
-            logger.debug(f"Models directory {models_dir} exists but is empty.")
-        else:
-            for model_dir in model_dirs:
-                if model_dir.is_dir():
-                    model_info = {
-                        "name": model_dir.name,
-                        "path": str(model_dir),
-                        "source": "directory",
-                        "size": sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file()) / (1024**3)  # Size in GB
-                    }
-                    
-                    # Check for config file
-                    config_file = model_dir / "config.json"
-                    if config_file.exists():
-                        try:
-                            with open(config_file, 'r') as f:
-                                config = json.load(f)
-                            model_info.update({
-                                "architecture": config.get("architectures", ["Unknown"])[0],
-                                "vocab_size": config.get("vocab_size", "Unknown"),
-                                "hidden_size": config.get("hidden_size", "Unknown")
-                            })
-                        except:
-                            pass
-                    
-                    models.append(model_info)
+    logger.info(f"Using CONFIG_DIR: {os.environ.get('CONFIG_DIR', 'configs')}")
+    logger.info(f"Using MODELS_DIR: {os.environ.get('MODELS_DIR', 'models')}")
     
-    # Also check for model configuration files in configs/models
-    config_models_dir = "configs/models"
+    # First check for model configuration files in configs/models
+    logger.info(f"Checking for model configs in: {config_models_dir}")
+    
     if os.path.exists(config_models_dir):
         try:
             import yaml
-        except ImportError:
-            logger.debug("Could not import yaml module. Will not check for model configuration files.")
-            return models
+            # Check if directory has any YAML files
+            yaml_files = list(Path(config_models_dir).glob("*.yaml"))
+            logger.info(f"Found {len(yaml_files)} YAML files in config directory")
             
-        # Check if directory has any YAML files
-        yaml_files = list(Path(config_models_dir).glob("*.yaml"))
-        if not yaml_files:
-            logger.debug(f"Config models directory {config_models_dir} exists but contains no YAML files.")
-        
-        for model_file in yaml_files:
-            try:
-                with open(model_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                
-                model_info = {
-                    "name": os.path.splitext(model_file.name)[0],
-                    "path": str(model_file),
-                    "source": "config",
-                    "config_file": str(model_file)
-                }
-                
-                # Add any metadata from the config file
-                if isinstance(config, dict):
-                    if "model_id" in config:
-                        model_info["model_id"] = config["model_id"]
-                    if "description" in config:
-                        model_info["description"] = config["description"]
-                    if "architecture" in config:
-                        model_info["architecture"] = config["architecture"]
-                
-                models.append(model_info)
-            except Exception as e:
-                logger.debug(f"Error loading model config from {model_file}: {e}")
+            if yaml_files:
+                for model_file in yaml_files:
+                    try:
+                        logger.info(f"Reading config file: {model_file}")
+                        with open(model_file, 'r') as f:
+                            config = yaml.safe_load(f)
+                        
+                        # Skip if not a valid model config
+                        if not isinstance(config, dict):
+                            logger.warning(f"Config file {model_file} is not a valid dictionary")
+                            continue
+                            
+                        model_info = {
+                            "name": os.path.splitext(model_file.name)[0],
+                            "path": str(model_file),
+                            "source": "config",
+                            "config_file": str(model_file),
+                            "size": 0  # Will be updated if model files exist
+                        }
+                        
+                        # Add model type and repo info if available
+                        if "model_type" in config:
+                            model_info["model_type"] = config["model_type"]
+                        if "repo_id" in config:
+                            model_info["repo_id"] = config["repo_id"]
+                            
+                        logger.info(f"Added model from config: {model_info['name']}")
+                        models.append(model_info)
+                    except Exception as e:
+                        logger.error(f"Error reading model config {model_file}: {e}")
+                        continue
+            else:
+                logger.warning(f"No YAML files found in {config_models_dir}")
+        except ImportError:
+            logger.error("Could not import yaml module. Will not check for model configuration files.")
+    else:
+        logger.warning(f"Config models directory does not exist: {config_models_dir}")
     
+    # Then check for actual model files in the models folder
+    logger.info(f"Checking for model files in: {models_dir}")
+    
+    if os.path.exists(models_dir):
+        # Check if directory has any model subdirectories
+        model_dirs = list(Path(models_dir).glob("*"))
+        logger.info(f"Found {len(model_dirs)} potential model directories")
+        
+        if model_dirs:
+            for model_dir in model_dirs:
+                # Skip ignored directories
+                if model_dir.name in IGNORED_DIRS:
+                    continue
+                    
+                if model_dir.is_dir():
+                    # Check if this is actually a model directory by looking for model files
+                    model_files = list(model_dir.glob("*.bin")) + list(model_dir.glob("*.pt")) + list(model_dir.glob("*.pth"))
+                    if not model_files:
+                        logger.debug(f"No model files found in {model_dir}")
+                        continue
+                        
+                    # Calculate model size
+                    model_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file()) / (1024**3)  # Size in GB
+                    
+                    # Check if we already have this model in our list
+                    existing_model = next((m for m in models if m["name"] == model_dir.name), None)
+                    if existing_model:
+                        # Update existing model info with size and path
+                        existing_model["size"] = model_size
+                        existing_model["path"] = str(model_dir)
+                        existing_model["source"] = "both"
+                        logger.info(f"Updated existing model: {model_dir.name}")
+                    else:
+                        # Create new model info
+                        model_info = {
+                            "name": model_dir.name,
+                            "path": str(model_dir),
+                            "source": "directory",
+                            "size": model_size
+                        }
+                        
+                        # Check for config file
+                        config_file = model_dir / "config.json"
+                        if config_file.exists():
+                            try:
+                                with open(config_file, 'r') as f:
+                                    config = json.load(f)
+                                model_info.update({
+                                    "architecture": config.get("architectures", ["Unknown"])[0],
+                                    "vocab_size": config.get("vocab_size", "Unknown"),
+                                    "hidden_size": config.get("hidden_size", "Unknown")
+                                })
+                            except:
+                                pass
+                        
+                        logger.info(f"Added model from directory: {model_dir.name}")
+                        models.append(model_info)
+    else:
+        logger.warning(f"Models directory does not exist: {models_dir}")
+    
+    logger.info(f"Total models found: {len(models)}")
     return models
 
 

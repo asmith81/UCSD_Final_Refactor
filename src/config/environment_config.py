@@ -8,10 +8,19 @@ environment-specific settings and detecting the execution environment.
 import os
 import sys
 import logging
+import platform
+import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
+import json
+import psutil
+import torch
+import gc
+
+# Import path utilities
+from src.config.path_utils import detect_project_root, get_workspace_root, ensure_directory
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -265,7 +274,7 @@ def get_environment_config(env_type: str = "auto") -> EnvironmentConfig:
         env_type = _detect_environment_type()
     
     # Try to load config from file
-    config_path = _get_environment_config_path(env_type)
+    config_path = _get_environment_config_path()
     if config_path and os.path.exists(config_path):
         _env_config = EnvironmentConfig.load_from_file(config_path)
     else:
@@ -303,29 +312,55 @@ def _detect_environment_type() -> str:
     # Default to local
     return "local"
 
-def _get_environment_config_path(env_type: str) -> Optional[str]:
+def _get_environment_config_path() -> Path:
     """
     Get the path to the environment configuration file.
     
-    Args:
-        env_type: Environment type
-        
     Returns:
-        Path to the environment configuration file or None if not found
+        Path to the environment configuration file
     """
-    # Determine location directly instead of using get_path
-    project_root = _detect_project_root()
-    env_config_dir = project_root / "configs" / "environments"
+    # First try to get from environment variable
+    if "ENV_CONFIG_PATH" in os.environ:
+        config_path = Path(os.environ["ENV_CONFIG_PATH"])
+        if config_path.exists():
+            return config_path
     
-    # Standard filename pattern
-    filename = f"{env_type.lower()}_env.yaml"
-    config_path = env_config_dir / filename
+    # Then try to find in standard locations
+    project_root = detect_project_root()
+    config_paths = [
+        project_root / "configs" / "environment.yaml",
+        project_root / "configs" / "environment.yml",
+        project_root / "configs" / "environment.json"
+    ]
     
-    if config_path.exists():
-        return str(config_path)
-    else:
-        logger.debug(f"Environment config file not found: {config_path}")
-        return None
+    for path in config_paths:
+        if path.exists():
+            return path
+    
+    # If no config found, create a default one
+    default_config_path = project_root / "configs" / "environment.yaml"
+    ensure_directory(default_config_path.parent)
+    
+    # Create default configuration
+    default_config = {
+        "environment": {
+            "type": "local",
+            "gpu": {
+                "enabled": True,
+                "memory_limit": 0.9,  # Use 90% of available GPU memory
+                "precision": "float16"
+            },
+            "cpu": {
+                "threads": psutil.cpu_count(),
+                "memory_limit": 0.8  # Use 80% of available RAM
+            }
+        }
+    }
+    
+    with open(default_config_path, 'w') as f:
+        yaml.dump(default_config, f, default_flow_style=False)
+    
+    return default_config_path
 
 def _create_default_config(env_type: str) -> EnvironmentConfig:
     """
