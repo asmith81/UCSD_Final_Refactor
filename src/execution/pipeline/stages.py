@@ -21,6 +21,7 @@ import torch
 from typing import Dict, Any, List, Optional, Tuple, Set
 from pathlib import Path
 from dataclasses import dataclass, field
+import json
 
 import pandas as pd
 
@@ -844,7 +845,7 @@ class QuantizationSelectionStage(BasePipelineStage):
                         f"Benchmark result for {strategy}: "
                         f"Loading time={loading_time:.2f}s, "
                         f"Memory={memory_used:.2f}GB, "
-                        f"Inference time={inference_time:.4f}s if inference_time else 'N/A'}, "
+                        f"Inference time={inference_time:.4f}s" if inference_time else "Inference time=N/A, "
                         f"Score={efficiency_score:.4f}"
                     )
                     
@@ -2227,7 +2228,7 @@ class ExportStage(BasePipelineStage):
         html_content.append("  const accuracyChart = new Chart(accuracyCtx, {")
         html_content.append("    type: 'bar',")
         html_content.append("    data: {")
-        html_content.append(f"      labels: {str(labels).replace('\'', '\"')},")
+        html_content.append(f"      labels: {json.dumps(labels)},")
         html_content.append("      datasets: [")
         
         colors = ["#3498db", "#2ecc71", "#e74c3c", "#f39c12", "#9b59b6"]

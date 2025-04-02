@@ -42,6 +42,7 @@ class ExperimentType:
     - Multi-field extraction
     """
     # Base experiment types
+    BASIC_EXTRACTION = "basic"  # Basic single-model extraction
     PROMPT_COMPARISON = "prompt_comparison"
     MODEL_COMPARISON = "model_comparison"
     MULTI_FIELD = "multi_field"
