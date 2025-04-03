@@ -18,12 +18,24 @@ import os
 import logging
 import gc
 import torch
-from typing import Dict, Any, List, Optional, Tuple, Set
+from typing import Dict, Any, List, Optional, Tuple, Set, Union
 from pathlib import Path
 from dataclasses import dataclass, field
 import json
-
+import time
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import LabelEncoder
+from scipy.stats import zscore
+from difflib import SequenceMatcher
+from dateutil.parser import parse as date_parse
+from dateutil.relativedelta import relativedelta
+from dateutil.rrule import rrule, MONTHLY
+from dateutil.parser import ParserError
+from datetime import date
 
 # Import base pipeline components
 from .base import BasePipelineStage, PipelineStageError
@@ -4422,7 +4434,7 @@ class ValidationStage(BasePipelineStage):
             
             return similarity
     
-    def _parse_date(self, date_str: str) -> Optional[datetime.date]:
+    def _parse_date(self, date_str: str) -> Optional[date]:
         """
         Parse date string into date object.
         
@@ -4433,62 +4445,61 @@ class ValidationStage(BasePipelineStage):
             Parsed date or None if parsing fails
         """
         import re
-        from datetime import datetime
+        from datetime import date
         
-        # Clean up the date string
-        date_str = str(date_str).strip()
+        if not date_str or not isinstance(date_str, str):
+            return None
+            
+        # Clean the date string
+        date_str = date_str.strip()
         
+        try:
+            # Try parsing with dateutil first
+            parsed = date_parse(date_str)
+            return parsed.date()
+        except (ParserError, ValueError):
+            # If dateutil fails, try manual parsing
+            pass
+            
         # Try common date formats
-        formats = [
-            '%m/%d/%Y',
-            '%m/%d/%y',
-            '%d/%m/%Y',
-            '%d/%m/%y',
-            '%Y-%m-%d',
-            '%d-%m-%Y',
-            '%Y/%m/%d',
-            '%m-%d-%Y',
-            '%m-%d-%y',
-            '%B %d, %Y',
-            '%b %d, %Y',
-            '%d %B %Y',
-            '%d %b %Y'
+        date_formats = [
+            r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})',  # MM/DD/YYYY or DD/MM/YYYY
+            r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})',    # YYYY/MM/DD
+            r'(\d{1,2})\s+(\w{3,9})\s+(\d{4})',      # DD Month YYYY
+            r'(\w{3,9})\s+(\d{1,2}),?\s+(\d{4})'     # Month DD, YYYY
         ]
         
-        for fmt in formats:
-            try:
-                date = datetime.strptime(date_str, fmt).date()
-                return date
-            except ValueError:
-                continue
-        
-        # Try to parse month-day-year pattern with regex
-        match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', date_str)
-        if match:
-            # Extract components
-            first, second, year = match.groups()
-            
-            # Determine if it's mm/dd or dd/mm format
-            try:
-                if int(first) <= 12:
-                    # Try as mm/dd/yyyy
-                    month, day = int(first), int(second)
-                else:
-                    # Try as dd/mm/yyyy
-                    day, month = int(first), int(second)
-                
-                # Handle 2-digit years
-                if len(year) == 2:
-                    year = 2000 + int(year) if int(year) < 50 else 1900 + int(year)
-                else:
-                    year = int(year)
-                
-                # Validate components
-                if 1 <= month <= 12 and 1 <= day <= 31 and 1900 <= year <= 2100:
-                    return datetime(year, month, day).date()
-            except (ValueError, TypeError):
-                pass
-        
+        for pattern in date_formats:
+            match = re.match(pattern, date_str, re.IGNORECASE)
+            if match:
+                try:
+                    if pattern == date_formats[0]:  # MM/DD/YYYY or DD/MM/YYYY
+                        # Try both orders
+                        try:
+                            return date(int(match.group(3)), int(match.group(1)), int(match.group(2)))
+                        except ValueError:
+                            return date(int(match.group(3)), int(match.group(2)), int(match.group(1)))
+                    elif pattern == date_formats[1]:  # YYYY/MM/DD
+                        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                    elif pattern == date_formats[2]:  # DD Month YYYY
+                        month_map = {
+                            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+                        }
+                        month = month_map.get(match.group(2).lower()[:3])
+                        if month:
+                            return date(int(match.group(3)), month, int(match.group(1)))
+                    elif pattern == date_formats[3]:  # Month DD, YYYY
+                        month_map = {
+                            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+                        }
+                        month = month_map.get(match.group(1).lower()[:3])
+                        if month:
+                            return date(int(match.group(3)), month, int(match.group(2)))
+                except (ValueError, IndexError):
+                    continue
+                    
         return None
     
     def _swap_month_day(self, date_str: str) -> str:
